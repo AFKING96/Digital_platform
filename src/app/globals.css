@@ -1,0 +1,155 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* Colors from Stitch Design System */
+  --color-background: #10131a;
+  --color-foreground: #e1e2ec;
+  --color-card: rgba(17, 24, 39, 0.6);
+  --color-card-foreground: #e1e2ec;
+  --color-popover: rgba(31, 41, 55, 0.8);
+  --color-popover-foreground: #e1e2ec;
+  --color-primary: #3B82F6;
+  --color-primary-foreground: #002e6a;
+  --color-secondary: #c0c1ff;
+  --color-secondary-foreground: #1000a9;
+  --color-muted: #191b23;
+  --color-muted-foreground: #c2c6d6;
+  --color-accent: #272a31;
+  --color-accent-foreground: #e1e2ec;
+  --color-destructive: #ffb4ab;
+  --color-destructive-foreground: #690005;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-input: rgba(0, 0, 0, 0.3);
+  --color-ring: #3B82F6;
+
+  /* Typography */
+  --font-sans: "Manrope", sans-serif;
+  --font-heading: "Lexend", sans-serif;
+
+  /* Radii */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+  --radius-4xl: 28px;
+}
+
+:root {
+  --background: #10131a;
+  --foreground: #e1e2ec;
+  --card: rgba(17, 24, 39, 0.6);
+  --card-foreground: #e1e2ec;
+  --popover: rgba(31, 41, 55, 0.8);
+  --popover-foreground: #e1e2ec;
+  --primary: #3B82F6;
+  --primary-foreground: #002e6a;
+  --secondary: #c0c1ff;
+  --secondary-foreground: #1000a9;
+  --muted: #191b23;
+  --muted-foreground: #c2c6d6;
+  --accent: #272a31;
+  --accent-foreground: #e1e2ec;
+  --destructive: #ffb4ab;
+  --destructive-foreground: #690005;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(0, 0, 0, 0.3);
+  --ring: #3B82F6;
+  --radius: 1rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground bg-[#0B1220] min-h-screen relative overflow-x-hidden;
+    font-family: var(--font-sans);
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+  }
+}
+
+.glass {
+  background-color: var(--card);
+  backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+.glass-panel {
+  background-color: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.glass-card {
+  background-color: rgba(17, 24, 39, 0.6);
+  backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 1.5rem;
+}
+.glass-container {
+  border-radius: 28px;
+  overflow: hidden;
+  position: relative;
+  z-index: 10;
+  background-color: var(--card);
+  backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* Gradient text */
+.text-gradient {
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-image: linear-gradient(to right, #60a5fa, #6366f1);
+}
+
+/* Background Blobs */
+.bg-blob-primary {
+  position: absolute;
+  top: -10%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  border-radius: 50%;
+  mix-blend-mode: screen;
+  filter: blur(100px);
+  opacity: 0.4;
+  background: radial-gradient(circle, #1E3A8A 0%, rgba(30, 58, 138, 0) 70%);
+}
+.bg-blob-secondary {
+  position: absolute;
+  top: 30%;
+  right: -10%;
+  width: 40vw;
+  height: 40vw;
+  border-radius: 50%;
+  mix-blend-mode: screen;
+  filter: blur(100px);
+  opacity: 0.3;
+  background: radial-gradient(circle, #312E81 0%, rgba(49, 46, 129, 0) 70%);
+}
+
+/* Button Glow */
+.btn-glow {
+  transition: all 300ms;
+}
+.btn-glow:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+}
+
+/* Shimmer sweep animation (login button) */
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
