@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Lock, PlayCircle, RotateCcw, BookOpen } from "lucide-react";
 import Link from "next/link";
 import { TiltCard } from "@/components/ui/tilt-card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Lesson {
   id: number;
+  order: number;
   title: string;
   summary: string[];
 }
@@ -35,7 +37,7 @@ export default function PracticePage() {
         }
 
         // Get all lessons
-        const lessonsQuery = query(collection(db, "lessons"), orderBy("id", "asc"));
+        const lessonsQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
         const lessonsSnap = await getDocs(lessonsQuery);
         
         const lessonsData = lessonsSnap.docs.map(doc => ({
@@ -55,11 +57,22 @@ export default function PracticePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      <div className="space-y-8 pb-10">
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-48 bg-white/5" />
+          <Skeleton className="h-4 w-64 bg-white/5" />
+        </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <Skeleton key={i} className="h-48 w-full rounded-2xl bg-white/5" />
+          ))}
+        </div>
       </div>
     );
   }
+
+  const currentIdx = lessons.findIndex(l => l.id === currentLesson);
+  const currentDisplayNum = currentIdx !== -1 ? currentIdx + 1 : (lessons.length > 0 ? 1 : currentLesson);
 
   return (
     <div className="space-y-8 pb-10">
@@ -70,9 +83,9 @@ export default function PracticePage() {
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {lessons.map((lesson, index) => {
-          const isCompleted = lesson.id < currentLesson;
-          const isAvailable = lesson.id === currentLesson;
-          const isLocked = lesson.id > currentLesson;
+          const isCompleted = lesson.order < currentDisplayNum;
+          const isAvailable = lesson.order === currentDisplayNum;
+          const isLocked = lesson.order > currentDisplayNum;
 
           return (
             <motion.div
@@ -106,7 +119,7 @@ export default function PracticePage() {
 
                   <h3 className="text-xl font-bold mb-2 text-white">{lesson.title}</h3>
                   <p className="text-sm text-muted-foreground line-clamp-2 flex-1">
-                    Module {lesson.id}
+                    Module {lesson.order}
                   </p>
 
                   <div className="mt-6 pt-4 border-t border-white/5">

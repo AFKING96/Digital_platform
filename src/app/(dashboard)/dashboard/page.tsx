@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { PlayCircle, Target, CheckCircle2, FileText, ArrowRight, Lock, BookOpen, Flame, Star } from "lucide-react";
 import Link from "next/link";
 import { ContainerScroll } from "@/components/ui/container-scroll-animation";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface UserData {
   name: string;
@@ -21,6 +22,7 @@ interface UserData {
 
 interface Lesson {
   id: number;
+  order: number;
   title: string;
   summary: string[];
 }
@@ -49,7 +51,7 @@ export default function DashboardPage() {
         }
 
         // Fetch All Lessons
-        const lQuery = query(collection(db, "lessons"), orderBy("id", "asc"));
+        const lQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
         const lSnap = await getDocs(lQuery);
         const lData: Lesson[] = [];
         lSnap.forEach(doc => lData.push(doc.data() as Lesson));
@@ -72,16 +74,34 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[50vh]">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      <div className="space-y-12 pb-10">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-2xl bg-white/5" />
+          ))}
+        </div>
+        <Skeleton className="h-[400px] w-full rounded-[40px] bg-white/5" />
+        <div className="space-y-6">
+          <Skeleton className="h-8 w-48 bg-white/5" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[...Array(6)].map((_, i) => (
+              <Skeleton key={i} className="h-48 rounded-[32px] bg-white/5" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
   // Guard: currentLesson may be missing from Firestore — default to 1
   const currentLesson = userData?.currentLesson ?? 1;
+  const currentLessonIdx = lessons.findIndex(l => l.id === currentLesson);
+  const currentLessonDisplayNumber = currentLessonIdx !== -1 ? currentLessonIdx + 1 : (lessons.length > 0 ? 1 : currentLesson);
+  
   const currentLessonData = lessons.find(l => l.id === currentLesson);
-  const currentLessonTitle = currentLessonData?.title ?? `Module ${currentLesson}`;
+  const currentLessonTitle = currentLessonData?.title 
+    ? `Module ${currentLessonDisplayNumber}: ${currentLessonData.title}` 
+    : `Module ${currentLessonDisplayNumber}`;
 
   return (
     <div className="space-y-12 pb-10">
@@ -190,7 +210,7 @@ export default function DashboardPage() {
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {lessons.map((lesson, idx) => {
-            const isUnlocked = lesson.id <= currentLesson;
+            const isUnlocked = (idx + 1) <= currentLessonDisplayNumber;
             
             return (
               <motion.div key={lesson.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * idx }}>
@@ -205,7 +225,7 @@ export default function DashboardPage() {
                         <span className="text-xs font-bold uppercase tracking-wider text-primary bg-primary/10 px-2 py-1 rounded">Unlocked</span>
                       </div>
                       <div className="relative z-10">
-                        <h3 className="font-bold text-xl mb-1 text-white group-hover:text-primary transition-colors">Module {lesson.id}: {lesson.title}</h3>
+                        <h3 className="font-bold text-xl mb-1 text-white group-hover:text-primary transition-colors">Module {lesson.order}: {lesson.title}</h3>
                         <p className="text-sm text-muted-foreground line-clamp-2">
                           {lesson.summary?.[0] || "Explore this module's topics and take the quiz."}
                         </p>
@@ -221,7 +241,7 @@ export default function DashboardPage() {
                       <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground bg-white/5 px-2 py-1 rounded">Locked</span>
                     </div>
                     <div>
-                      <h3 className="font-bold text-xl mb-1 text-muted-foreground">Module {lesson.id}: {lesson.title}</h3>
+                      <h3 className="font-bold text-xl mb-1 text-muted-foreground">Module {lesson.order}: {lesson.title}</h3>
                       <p className="text-sm text-muted-foreground/50 line-clamp-2">Complete previous modules to unlock.</p>
                     </div>
                   </Card>

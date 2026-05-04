@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Trophy, Medal, Crown, Star } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface LeaderboardUser {
   id: string;
@@ -45,8 +46,16 @@ export default function LeaderboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      <div className="max-w-4xl mx-auto space-y-8 pb-10">
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-48 bg-white/5" />
+          <Skeleton className="h-4 w-64 bg-white/5" />
+        </div>
+        <div className="space-y-4">
+          {[...Array(8)].map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-2xl bg-white/5" />
+          ))}
+        </div>
       </div>
     );
   }

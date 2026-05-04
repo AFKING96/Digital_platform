@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, onSnapshot, doc, updateDoc, getDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, updateDoc, getDoc, getDocs, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Save, CheckCircle2, Clock } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Submission {
   id: string;
@@ -27,8 +28,24 @@ export default function SubmissionsPage() {
   const [filter, setFilter] = useState<"all" | "pending" | "reviewed">("pending");
   const [gradingId, setGradingId] = useState<string | null>(null);
   const [gradeForm, setGradeForm] = useState({ score: 0, feedback: "" });
+  const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // 1. Fetch lesson mapping first
+    const fetchLessons = async () => {
+      const q = query(collection(db, "lessons"), orderBy("order", "asc"));
+      const snap = await getDocs(q);
+      const mapping: Record<number, number> = {};
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        mapping[data.id] = data.order;
+      });
+      setLessonMap(mapping);
+    };
+    fetchLessons();
+
+    // 2. Real-time submissions
     const q = query(collection(db, "submissions"));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const subs: Submission[] = [];
@@ -51,9 +68,26 @@ export default function SubmissionsPage() {
         return 0;
       });
       setSubmissions(subs);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-10 w-48 bg-white/5" />
+          <Skeleton className="h-10 w-64 bg-white/5" />
+        </div>
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-2xl bg-white/5" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const handleGrade = (sub: Submission) => {
     setGradingId(sub.id);
@@ -122,7 +156,7 @@ export default function SubmissionsPage() {
               <div className="flex justify-between items-start mb-6 border-b border-white/5 pb-4">
                 <div>
                   <h3 className="font-bold text-xl text-white">{sub.userName}</h3>
-                  <p className="text-sm text-muted-foreground">Module {sub.lessonId}</p>
+                  <p className="text-sm text-muted-foreground">Module {lessonMap[Number(sub.lessonId)] || sub.lessonId}</p>
                 </div>
                 {sub.status === "pending" ? (
                   <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20"><Clock className="w-3 h-3 mr-1"/> Pending</Badge>

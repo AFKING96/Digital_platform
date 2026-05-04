@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SessionNavBar } from "@/components/ui/sidebar";
+import { PageTransition } from "@/components/page-transition";
 
 export default function DashboardLayout({
   children,
@@ -33,10 +34,12 @@ export default function DashboardLayout({
     <div className="flex min-h-screen bg-black text-slate-100 flex-row w-screen">
       <SessionNavBar />
       {/* Shim that matches the collapsed sidebar width so content isn't hidden behind it */}
-      <div className="w-[3.05rem] shrink-0" aria-hidden="true" />
+      <div className="w-[3.05rem] shrink-0 hidden lg:block" aria-hidden="true" />
       <main className="flex grow flex-col relative">
         <div className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto relative z-10">
-          {children}
+          <PageTransition>
+            {children}
+          </PageTransition>
         </div>
       </main>
     </div>

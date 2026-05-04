@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, getDoc, addDoc, collection, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, addDoc, collection, updateDoc, serverTimestamp, getDocs, orderBy } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ArrowRight, Check, ExternalLink } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Question {
   question: string;
@@ -40,27 +41,34 @@ export default function SolvePage() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [displayNumber, setDisplayNumber] = useState<number | null>(null);
 
   useEffect(() => {
-    const fetchQuiz = async () => {
-      // Quizzes are stored with the lesson ID (string) as the Firestore doc ID
-      const quizRef = doc(db, "quizzes", params.id as string);
+    const fetchData = async () => {
       try {
+        // 1. Fetch current quiz
+        const quizRef = doc(db, "quizzes", params.id as string);
         const snap = await getDoc(quizRef);
         if (snap.exists()) {
           setQuiz(snap.data() as Quiz);
         }
-        // If no quiz exists for this lesson, quiz stays null → handled in UI
+
+        // 2. Fetch lesson to get order
+        const lessonsRef = collection(db, "lessons");
+        const q = query(lessonsRef, where("id", "==", Number(params.id)));
+        const lessonsSnap = await getDocs(q);
+        if (!lessonsSnap.empty) {
+          setDisplayNumber(lessonsSnap.docs[0].data().order);
+        }
+
       } catch (error) {
-        console.warn("Error fetching quiz:", error);
+        console.warn("Error fetching quiz data:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    if (params.id) {
-      fetchQuiz();
-    }
+    if (params.id) { fetchData(); }
   }, [params.id]);
 
   const handleNext = () => {
@@ -163,7 +171,7 @@ export default function SolvePage() {
         // 3. Notification: Result
         await addDoc(collection(db, "notifications"), {
           userId: auth.currentUser.uid,
-          message: `You completed Module ${quiz.lessonId} with ${accuracy}% accuracy! +${gainedPoints} points earned.`,
+          message: `You completed Module ${displayNumber || quiz.lessonId} with ${accuracy}% accuracy! +${gainedPoints} points earned.`,
           type: "result",
           read: false,
           createdAt: serverTimestamp()
@@ -181,8 +189,20 @@ export default function SolvePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      <div className="max-w-3xl mx-auto space-y-8 pb-10">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-10 w-24 bg-white/5" />
+          <Skeleton className="h-6 w-32 bg-white/5" />
+        </div>
+        <Skeleton className="h-4 w-full bg-white/5" />
+        <Card className="glass-card p-8 space-y-6">
+          <Skeleton className="h-8 w-3/4 bg-white/5" />
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-xl bg-white/5" />
+            ))}
+          </div>
+        </Card>
       </div>
     );
   }

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Plus, BookOpen, Clock, Trash2, Calendar } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Homework {
   id: string;
@@ -22,10 +23,27 @@ export default function AdminHomeworkPage() {
   const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState({ lessonId: "", title: "", deadline: "" });
+  const [lessons, setLessons] = useState<{id: number, title: string}[]>([]);
+  const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
 
   useEffect(() => {
     fetchHomeworks();
+    fetchLessonMap();
   }, []);
+
+  const fetchLessonMap = async () => {
+    const q = query(collection(db, "lessons"), orderBy("order", "asc"));
+    const snap = await getDocs(q);
+    const mapping: Record<number, number> = {};
+    const lList: {id: number, title: string, order: number}[] = [];
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      mapping[data.id] = data.order;
+      lList.push({ id: data.id, title: data.title, order: data.order });
+    });
+    setLessonMap(mapping);
+    setLessons(lList);
+  };
 
   const fetchHomeworks = async () => {
     try {
@@ -57,7 +75,7 @@ export default function AdminHomeworkPage() {
       for (const userDoc of usersSnap.docs) {
         await addDoc(collection(db, "notifications"), {
           userId: userDoc.id,
-          message: `New Homework Assigned: ${form.title} (Module ${form.lessonId})`,
+          message: `New Homework Assigned: ${form.title} (Module ${lessonMap[Number(form.lessonId)] || form.lessonId})`,
           type: "homework",
           read: false,
           createdAt: serverTimestamp()
@@ -84,8 +102,19 @@ export default function AdminHomeworkPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      <div className="space-y-6 pb-10">
+        <div className="flex justify-between items-center">
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-64 bg-white/5" />
+            <Skeleton className="h-4 w-48 bg-white/5" />
+          </div>
+          <Skeleton className="h-10 w-40 bg-white/5" />
+        </div>
+        <div className="space-y-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-2xl bg-white/5" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -99,28 +128,29 @@ export default function AdminHomeworkPage() {
         </div>
         
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger
-            render={
-              <Button className="bg-primary hover:bg-primary/90 btn-glow">
-                <Plus className="w-4 h-4 mr-2" /> Assign Homework
-              </Button>
-            }
-          />
+          <DialogTrigger asChild>
+            <Button className="bg-primary hover:bg-primary/90 btn-glow">
+              <Plus className="w-4 h-4 mr-2" /> Assign Homework
+            </Button>
+          </DialogTrigger>
           <DialogContent className="bg-black/90 border-white/10 text-white backdrop-blur-xl">
             <DialogHeader>
               <DialogTitle>Assign New Homework</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleAdd} className="space-y-4 pt-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Module ID</label>
-                <Input 
-                  type="number" 
+                <label className="text-sm font-medium text-muted-foreground">Select Module</label>
+                <select 
                   required 
                   value={form.lessonId} 
-                  onChange={e => setForm({...form, lessonId: e.target.value})} 
-                  placeholder="e.g. 1" 
-                  className="bg-black/30 border-white/10"
-                />
+                  onChange={e => setForm({...form, lessonId: e.target.value})}
+                  className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-sm text-white"
+                >
+                  <option value="">Select a module...</option>
+                  {lessons.map((l) => (
+                    <option key={l.id} value={l.id}>Module {l.order}: {l.title}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Homework Title</label>
@@ -159,10 +189,10 @@ export default function AdminHomeworkPage() {
                 <h3 className="text-lg font-bold text-white">{hw.title}</h3>
                 <div className="flex items-center gap-4 mt-1">
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <BookOpen className="w-3 h-3" /> Module {hw.lessonId}
+                    <BookOpen className="w-3 h-3" /> Module {lessonMap[hw.lessonId] || hw.lessonId}
                   </span>
                   <span className="text-xs text-red-400 flex items-center gap-1">
-                    <Calendar className="w-3 h-3" /> Due: {hw.deadline?.toDate().toLocaleString()}
+                    <Calendar className="w-3 h-3" /> Due: {hw.deadline?.toDate ? hw.deadline.toDate().toLocaleString() : new Date(hw.deadline).toLocaleString()}
                   </span>
                 </div>
               </div>

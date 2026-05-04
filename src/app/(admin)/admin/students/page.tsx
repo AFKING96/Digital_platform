@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, onSnapshot, doc, updateDoc, setDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, getDocs, orderBy } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,12 +28,31 @@ export default function StudentsPage() {
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [lessons, setLessons] = useState<{id: number, title: string}[]>([]);
   
   // Forms
   const [addForm, setAddForm] = useState({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1 });
   const [editForm, setEditForm] = useState({ currentLesson: 1, paid: 0, remaining: 0 });
+  const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
 
   useEffect(() => {
+    // 1. Fetch lesson mapping
+    const fetchLessonMap = async () => {
+      const q = query(collection(db, "lessons"), orderBy("order", "asc"));
+      const snap = await getDocs(q);
+      const mapping: Record<number, number> = {};
+      const lList: {id: number, title: string, order: number}[] = [];
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        mapping[data.id] = data.order;
+        lList.push({ id: data.id, title: data.title, order: data.order });
+      });
+      setLessonMap(mapping);
+      setLessons(lList);
+    };
+    fetchLessonMap();
+
+    // 2. Real-time students
     const q = query(collection(db, "users"), where("role", "==", "student"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const studs: Student[] = [];
@@ -172,8 +191,23 @@ export default function StudentsPage() {
               <Input placeholder="University ID (e.g. 2023001)" value={addForm.universityId} onChange={e => setAddForm({...addForm, universityId: e.target.value})} required className="bg-black/30 border-white/10" />
               <Input placeholder="Password" type="password" value={addForm.password} onChange={e => setAddForm({...addForm, password: e.target.value})} required className="bg-black/30 border-white/10" />
               <div className="flex gap-4">
-                <Input placeholder="Current Lesson" type="number" value={addForm.currentLesson} onChange={e => setAddForm({...addForm, currentLesson: Number(e.target.value)})} className="bg-black/30 border-white/10" />
-                <Input placeholder="Paid Amount" type="number" value={addForm.paid} onChange={e => setAddForm({...addForm, paid: Number(e.target.value)})} className="bg-black/30 border-white/10" />
+                <div className="flex-1 space-y-2">
+                  <label className="text-xs text-muted-foreground uppercase">Initial Module</label>
+                  <select 
+                    value={addForm.currentLesson} 
+                    onChange={e => setAddForm({...addForm, currentLesson: Number(e.target.value)})}
+                    className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-sm text-white"
+                  >
+                    {lessons.map((l) => (
+                      <option key={l.id} value={l.id}>Module {l.order}: {l.title}</option>
+                    ))}
+                    {lessons.length === 0 && <option value={1}>No lessons found</option>}
+                  </select>
+                </div>
+                <div className="flex-1 space-y-2">
+                  <label className="text-xs text-muted-foreground uppercase">Paid Amount ($)</label>
+                  <Input placeholder="Paid Amount" type="number" value={addForm.paid} onChange={e => setAddForm({...addForm, paid: Number(e.target.value)})} className="bg-black/30 border-white/10" />
+                </div>
               </div>
               <Button type="submit" className="w-full bg-primary hover:bg-primary/90">Create Account</Button>
             </form>
@@ -220,7 +254,7 @@ export default function StudentsPage() {
                 <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/10 text-sm relative z-10">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <BookOpen className="w-4 h-4 text-primary" />
-                    <span>Lsn {student.currentLesson}</span>
+                    <span>Mod {lessonMap[student.currentLesson] || student.currentLesson}</span>
                   </div>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Target className="w-4 h-4 text-emerald-400" />
@@ -273,8 +307,16 @@ export default function StudentsPage() {
                 
                 <div className="space-y-4 bg-black/20 p-4 rounded-xl border border-white/5">
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm text-muted-foreground">Current Lesson Progression</label>
-                    <Input type="number" className="bg-black/40 border-white/10" value={editForm.currentLesson} onChange={e => setEditForm({...editForm, currentLesson: Number(e.target.value)})} />
+                    <label className="text-sm text-muted-foreground">Module Progression</label>
+                    <select 
+                      className="bg-black/40 border border-white/10 rounded-md p-2 text-white" 
+                      value={editForm.currentLesson} 
+                      onChange={e => setEditForm({...editForm, currentLesson: Number(e.target.value)})}
+                    >
+                      {lessons.map((l) => (
+                        <option key={l.id} value={l.id}>Module {l.order}: {l.title}</option>
+                      ))}
+                    </select>
                   </div>
                   
                   <div className="flex flex-col gap-2">

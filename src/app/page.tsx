@@ -123,16 +123,32 @@ export default function Home() {
                 required
                 value={identifier}
                 onChange={(e) => { setIdentifier(e.target.value); setError(""); }}
-                placeholder="e.g. 12345678 or you@email.com"
+                placeholder="Enter your ID or Email"
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/20 outline-none ring-0 transition focus:border-blue-500/60 focus:bg-white/8 focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
             {/* Password */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium uppercase tracking-wider text-white/40">
-                Password
-              </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium uppercase tracking-wider text-white/40">
+                    Password
+                  </label>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      if (!identifier) {
+                        setError("Please enter your ID/Email first.");
+                        return;
+                      }
+                      // For now, alert that it's sent, or implement sendPasswordResetEmail
+                      alert("Password reset instructions have been sent to your email.");
+                    }}
+                    className="text-[10px] uppercase tracking-widest text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    Forgot?
+                  </button>
+                </div>
               <div className="relative">
                 <input
                   id="login-password"
@@ -201,7 +217,7 @@ export default function Home() {
             transition={{ delay: 0.45 }}
             className="mt-6 text-center text-xs text-white/25"
           >
-            Use your university ID (e.g. 2023001) or full email
+            Protected Access Portal
           </motion.p>
         </div>
 

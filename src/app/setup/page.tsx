@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -16,6 +17,25 @@ export default function SetupPage() {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "exists" | "error">("idle");
   const [message, setMessage] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
+  const router = useRouter();
+
+  useEffect(() => {
+    const checkAdmin = async () => {
+      try {
+        // Simple check: does any admin exist?
+        // We can query for role == admin
+        const { collection, query, where, getDocs, limit } = await import("firebase/firestore");
+        const q = query(collection(db, "users"), where("role", "==", "admin"), limit(1));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          router.replace("/");
+        }
+      } catch (e) {
+        console.error("Setup protection check failed", e);
+      }
+    };
+    checkAdmin();
+  }, [router]);
 
   const addLog = (msg: string) => setLogs((l) => [...l, msg]);
 

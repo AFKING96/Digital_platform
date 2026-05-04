@@ -14,8 +14,17 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Luminal Learning | Student Dashboard",
-  description: "Premium student learning and practice platform",
+  title: "Coursat | Premium Learning Platform",
+  description: "Accelerate your learning with Coursat - the premium practice and curriculum platform.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Coursat",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export default function RootLayout({

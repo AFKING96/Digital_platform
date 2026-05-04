@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
 import { SessionNavBar } from "@/components/ui/sidebar";
+import { PageTransition } from "@/components/page-transition";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isAdmin, loading } = useAuth();
@@ -33,10 +34,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="flex h-screen bg-black text-slate-100 overflow-hidden flex-row w-screen">
       <SessionNavBar />
       {/* Shim that matches the collapsed sidebar width so content isn't hidden behind it */}
-      <div className="w-[3.05rem] shrink-0" aria-hidden="true" />
+      <div className="w-[3.05rem] shrink-0 hidden lg:block" aria-hidden="true" />
       <main className="flex h-screen grow flex-col overflow-auto relative">
         <div className="flex-1 overflow-y-auto p-8 relative z-10">
-          {children}
+          <PageTransition>
+            {children}
+          </PageTransition>
         </div>
       </main>
     </div>

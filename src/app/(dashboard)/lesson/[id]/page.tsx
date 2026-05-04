@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, PlayCircle, BookOpen } from "lucide-react";
+import { ArrowLeft, PlayCircle, BookOpen, StickyNote } from "lucide-react";
 import Link from "next/link";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Lesson {
   id: number;
@@ -20,35 +21,53 @@ export default function LessonPage() {
   const params = useParams();
   const router = useRouter();
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [displayNumber, setDisplayNumber] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notes, setNotes] = useState("");
 
   useEffect(() => {
-    const fetchLesson = async () => {
-      // Lessons are stored with their numeric ID as the Firestore doc ID (e.g. "1", "2")
-      const docRef = doc(db, "lessons", params.id as string);
+    const fetchData = async () => {
       try {
+        // 1. Fetch current lesson
+        const docRef = doc(db, "lessons", params.id as string);
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           setLesson(snap.data() as Lesson);
         }
-        // If not found, lesson stays null → the "not found" UI renders (no console.error)
+
+        // 2. Fetch lesson to get order
+        const lessonsRef = collection(db, "lessons");
+        const q = query(lessonsRef, where("id", "==", Number(params.id)));
+        const lessonsSnap = await getDocs(q);
+        if (!lessonsSnap.empty) {
+          setDisplayNumber(lessonsSnap.docs[0].data().order);
+        }
+
       } catch (error) {
-        // Only log genuine network/permission errors, not "not found"
-        console.warn("Error fetching lesson:", error);
+        console.warn("Error fetching lesson data:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    if (params.id) {
-      fetchLesson();
+    if (params.id) { 
+      fetchData(); 
+      const savedNotes = localStorage.getItem(`lesson_notes_${params.id}`);
+      if (savedNotes) setNotes(savedNotes);
     }
   }, [params.id]);
 
+  const saveNotes = (val: string) => {
+    setNotes(val);
+    localStorage.setItem(`lesson_notes_${params.id}`, val);
+  };
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[60vh]">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      <div className="max-w-4xl mx-auto space-y-8 pb-10">
+        <Skeleton className="h-8 w-32 bg-white/5" />
+        <Skeleton className="h-[500px] w-full rounded-[32px] bg-white/5" />
+        <Skeleton className="h-64 w-full rounded-2xl bg-white/5" />
       </div>
     );
   }
@@ -88,7 +107,7 @@ export default function LessonPage() {
           
           <div className="relative z-10 space-y-6">
             <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-              Module {lesson.id}
+              Module {displayNumber || lesson.id}
             </div>
             
             <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">
@@ -121,6 +140,30 @@ export default function LessonPage() {
                 </Button>
               </Link>
             </div>
+          </div>
+        </Card>
+      </motion.div>
+
+      {/* Student Notes Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+        className="space-y-4"
+      >
+        <div className="flex items-center gap-2 text-white/60">
+          <StickyNote className="w-5 h-5 text-primary" />
+          <h2 className="text-xl font-bold">My Lesson Notes</h2>
+        </div>
+        <Card className="glass-card bg-black/40 border-white/5 p-6">
+          <textarea
+            value={notes}
+            onChange={(e) => saveNotes(e.target.value)}
+            placeholder="Type your notes here... (Automatically saved)"
+            className="w-full h-48 bg-transparent text-white/80 placeholder:text-white/10 resize-none outline-none text-lg leading-relaxed"
+          />
+          <div className="mt-2 text-right text-[10px] uppercase tracking-widest text-white/20">
+            Saved to local storage
           </div>
         </Card>
       </motion.div>

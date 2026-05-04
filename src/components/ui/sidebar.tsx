@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { motion, type Transition } from "framer-motion";
+import { motion, AnimatePresence, type Transition } from "framer-motion";
 import { NotificationBell } from "@/components/ui/notification-bell";
 import {
   UserSearch,
@@ -22,7 +22,9 @@ import {
   Blocks,
   AlertTriangle,
   ClipboardList,
-  Trophy
+  Trophy,
+  Menu,
+  X
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import Link from "next/link";
@@ -85,6 +87,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 
 export function SessionNavBar() {
   const [isCollapsed, setIsCollapsed] = useState(true);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const { user, userData } = useAuth();
   const role = userData?.role || "student";
   const pathname = usePathname();
@@ -111,18 +114,46 @@ export function SessionNavBar() {
   ];
 
   const links = role === "admin" ? adminLinks : studentLinks;
+
   return (
-    <motion.div
-      className={cn(
-        "sidebar fixed left-0 z-40 h-full shrink-0 border-r bg-white dark:bg-black",
-      )}
-      initial={false}
-      animate={isCollapsed ? "closed" : "open"}
-      variants={sidebarVariants}
-      transition={transitionProps}
-      onMouseEnter={() => setIsCollapsed(false)}
-      onMouseLeave={() => setIsCollapsed(true)}
-    >
+    <>
+      {/* Mobile Toggle Button */}
+      <div className="lg:hidden fixed top-4 left-4 z-50">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={() => setIsMobileOpen(!isMobileOpen)}
+          className="bg-black/50 backdrop-blur-md border border-white/10 rounded-xl"
+        >
+          {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </Button>
+      </div>
+
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {isMobileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsMobileOpen(false)}
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        className={cn(
+          "sidebar fixed left-0 z-40 h-full shrink-0 border-r bg-white dark:bg-black transition-transform lg:translate-x-0",
+          !isMobileOpen && "-translate-x-full lg:translate-x-0"
+        )}
+        initial={false}
+        animate={isCollapsed ? "closed" : "open"}
+        variants={sidebarVariants}
+        transition={transitionProps}
+        onMouseEnter={() => setIsCollapsed(false)}
+        onMouseLeave={() => setIsCollapsed(true)}
+      >
       <motion.div
         className={`relative z-40 flex text-muted-foreground h-full shrink-0 flex-col bg-white dark:bg-black transition-all`}
         variants={contentVariants}
@@ -269,5 +300,6 @@ export function SessionNavBar() {
         </motion.ul>
       </motion.div>
     </motion.div>
+    </>
   );
 }

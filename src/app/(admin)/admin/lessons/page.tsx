@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -12,9 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Edit2, Save, Trash2, X, FileUp, File as FileIcon } from "lucide-react";
 import { type FormatFileProps } from "@/components/ui/file-card-collections";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Lesson {
   id: number;
+  order: number;
   title: string;
   summary: string[];
   file?: string;
@@ -27,32 +29,60 @@ export default function LessonsPage() {
   
   const [form, setForm] = useState({ id: 1, title: "", summary: "", file: "" });
   const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, "lessons"), orderBy("id", "asc"));
+    const q = query(collection(db, "lessons"), orderBy("order", "asc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: Lesson[] = [];
       snapshot.forEach((doc) => {
         data.push(doc.data() as Lesson);
       });
       setLessons(data);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-10 w-48 bg-white/5" />
+          <Skeleton className="h-10 w-32 bg-white/5" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <Skeleton key={i} className="h-64 rounded-2xl bg-white/5" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const summaryArray = form.summary.split('\n').filter(s => s.trim() !== "");
+      
+      let finalOrder = 0;
+      if (editingId) {
+        finalOrder = lessons.find(l => l.id === editingId)?.order || 1;
+      } else {
+        const maxOrder = lessons.length > 0 ? Math.max(...lessons.map(l => l.order || 0)) : 0;
+        finalOrder = maxOrder + 1;
+      }
+
       await setDoc(doc(db, "lessons", form.id.toString()), {
         id: Number(form.id),
+        order: finalOrder,
         title: form.title,
         summary: summaryArray,
         file: form.file || ""
       });
       setIsAdding(false);
       setEditingId(null);
-      setForm({ id: lessons.length > 0 ? lessons[lessons.length-1].id + 1 : 1, title: "", summary: "", file: "" });
+      setForm({ id: lessons.length > 0 ? Math.max(...lessons.map(l => l.id)) + 1 : 1, title: "", summary: "", file: "" });
     } catch (error) {
       console.error("Error saving lesson:", error);
     }
@@ -60,7 +90,29 @@ export default function LessonsPage() {
 
   const handleDelete = async (id: number) => {
     if (confirm("Are you sure you want to delete this lesson?")) {
-      await deleteDoc(doc(db, "lessons", id.toString()));
+      try {
+        await deleteDoc(doc(db, "lessons", id.toString()));
+        
+        // Fetch fresh lessons to ensure we have the latest state before reordering
+        const q = query(collection(db, "lessons"), orderBy("order", "asc"));
+        const snap = await getDocs(q);
+        
+        // Recalculate order for remaining lessons
+        const updates = snap.docs.map(async (d, idx) => {
+          const lesson = d.data() as Lesson;
+          const newOrder = idx + 1;
+          if (lesson.order !== newOrder) {
+            return setDoc(doc(db, "lessons", lesson.id.toString()), {
+              ...lesson,
+              order: newOrder
+            });
+          }
+        });
+        
+        await Promise.all(updates);
+      } catch (error) {
+        console.error("Error deleting/reordering lessons:", error);
+      }
     }
   };
 
@@ -156,11 +208,11 @@ export default function LessonsPage() {
       )}
 
       <div className="grid gap-4">
-        {lessons.map((lesson) => (
+        {lessons.map((lesson, idx) => (
           <HighlightCard key={lesson.id} glowColor="from-blue-500/10 to-transparent">
             <div className="flex-1">
               <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary mb-2">
-                Module {lesson.id}
+                Module {lesson.order}
               </div>
               <h3 className="font-bold text-xl text-white mb-2">{lesson.title}</h3>
               <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1 mb-3">

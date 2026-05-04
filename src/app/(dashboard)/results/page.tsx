@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock, Trophy, AlertCircle, MessageSquare } from "lucide-react";
 import Link from "next/link";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Submission {
   id: string;
@@ -25,12 +26,24 @@ export default function ResultsPage() {
   
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
 
   useEffect(() => {
-    const fetchSubmissions = async () => {
+    const fetchData = async () => {
       if (!auth.currentUser) return;
       
       try {
+        // 1. Fetch lesson mapping
+        const lQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
+        const lSnap = await getDocs(lQuery);
+        const mapping: Record<number, number> = {};
+        lSnap.docs.forEach((d) => {
+          const data = d.data();
+          mapping[data.id] = data.order;
+        });
+        setLessonMap(mapping);
+
+        // 2. Fetch submissions
         const subsQuery = query(
           collection(db, "submissions"), 
           where("userId", "==", auth.currentUser.uid)
@@ -42,24 +55,30 @@ export default function ResultsPage() {
           ...doc.data()
         })) as Submission[];
         
-        // Sort by submittedAt descending manually since we didn't index it
         subsData.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
-        
         setSubmissions(subsData);
       } catch (error) {
-        console.error("Error fetching submissions:", error);
+        console.error("Error fetching results:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchSubmissions();
+    fetchData();
   }, []);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[60vh]">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      <div className="space-y-8 max-w-5xl mx-auto pb-10">
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-48 bg-white/5" />
+          <Skeleton className="h-4 w-64 bg-white/5" />
+        </div>
+        <div className="space-y-6">
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-32 w-full rounded-2xl bg-white/5" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -111,7 +130,7 @@ export default function ResultsPage() {
                 <div className="space-y-4 flex-1">
                   <div className="flex items-center gap-3">
                     <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-                      Module {sub.lessonId}
+                      Module {lessonMap[sub.lessonId] || sub.lessonId}
                     </span>
                     <span className="text-sm text-muted-foreground flex items-center gap-1">
                       <Clock className="w-4 h-4" />
