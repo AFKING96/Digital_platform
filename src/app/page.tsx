@@ -121,6 +121,7 @@ export default function Home() {
                 type="text"
                 autoComplete="username"
                 required
+                suppressHydrationWarning
                 value={identifier}
                 onChange={(e) => { setIdentifier(e.target.value); setError(""); }}
                 placeholder="Enter your ID or Email"
@@ -155,6 +156,7 @@ export default function Home() {
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   required
+                  suppressHydrationWarning
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setError(""); }}
                   placeholder="••••••••"

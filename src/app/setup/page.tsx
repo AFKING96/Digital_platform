@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit, writeBatch } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { CheckCircle, AlertCircle, Loader2, ShieldCheck } from "lucide-react";
 
@@ -17,21 +17,22 @@ export default function SetupPage() {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "exists" | "error">("idle");
   const [message, setMessage] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
+  const [isReady, setIsReady] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     const checkAdmin = async () => {
       try {
-        // Simple check: does any admin exist?
-        // We can query for role == admin
-        const { collection, query, where, getDocs, limit } = await import("firebase/firestore");
         const q = query(collection(db, "users"), where("role", "==", "admin"), limit(1));
         const snap = await getDocs(q);
         if (!snap.empty) {
           router.replace("/");
+        } else {
+          setIsReady(true);
         }
       } catch (e) {
         console.error("Setup protection check failed", e);
+        setIsReady(true);
       }
     };
     checkAdmin();
@@ -108,6 +109,14 @@ export default function SetupPage() {
       setMessage(err.message);
     }
   };
+
+  if (!isReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#020408]">
+        <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#020408] p-4">

@@ -6,7 +6,9 @@ import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { DashboardOverview } from "@/components/ui/dashboard-overview";
-import { TrendingDown, Users, BarChart, Target } from "lucide-react";
+import { TrendingDown, Users, BarChart as BarChartIcon, Target } from "lucide-react";
+
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area } from "recharts";
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState({
@@ -21,6 +23,8 @@ export default function AdminDashboard() {
     lowestLesson: { id: 0, accuracy: 100 },
     mostSubmissionsLesson: { id: 0, count: 0 }
   });
+
+  const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
     // Realtime listeners for Students
@@ -71,6 +75,7 @@ export default function AdminDashboard() {
       // Calculate lowest accuracy lesson
       let lowest = { id: 0, accuracy: 100 };
       let mostSub = { id: 0, count: 0 };
+      const cData: any[] = [];
 
       Object.entries(lessonStats).forEach(([id, stat]) => {
         const avg = Math.round(stat.totalScore / stat.count);
@@ -80,7 +85,14 @@ export default function AdminDashboard() {
         if (stat.count > mostSub.count) {
           mostSub = { id: Number(id), count: stat.count };
         }
+        cData.push({
+          name: `Mod ${id}`,
+          accuracy: avg,
+          submissions: stat.count
+        });
       });
+
+      setChartData(cData.sort((a, b) => a.name.localeCompare(b.name)));
 
       setStats(prev => ({
         ...prev,
@@ -179,7 +191,7 @@ export default function AdminDashboard() {
           <Card className="glass-card p-6 border-emerald-500/20 bg-emerald-500/5">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                <BarChart className="w-6 h-6" />
+                <BarChartIcon className="w-6 h-6" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground font-medium uppercase tracking-wider">Most Active</p>
@@ -196,6 +208,60 @@ export default function AdminDashboard() {
           </Card>
         </motion.div>
       </div>
+
+      {/* Chart Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+      >
+        <Card className="glass-card p-8 border-white/5 bg-white/[0.02]">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Performance Overview</h2>
+              <p className="text-muted-foreground">Average accuracy and submission counts per module.</p>
+            </div>
+          </div>
+          
+          <div className="h-[350px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                <XAxis 
+                  dataKey="name" 
+                  stroke="#ffffff40" 
+                  fontSize={12} 
+                  tickLine={false} 
+                  axisLine={false}
+                />
+                <YAxis 
+                  stroke="#ffffff40" 
+                  fontSize={12} 
+                  tickLine={false} 
+                  axisLine={false}
+                  tickFormatter={(value) => `${value}%`}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: "#0c1220", 
+                    borderColor: "#ffffff10",
+                    borderRadius: "12px",
+                    color: "#fff"
+                  }}
+                  itemStyle={{ color: "#3b82f6" }}
+                />
+                <Bar 
+                  dataKey="accuracy" 
+                  fill="#3b82f6" 
+                  radius={[6, 6, 0, 0]} 
+                  barSize={40}
+                  className="drop-shadow-[0_0_10px_rgba(59,130,246,0.3)]"
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      </motion.div>
     </div>
   );
 }

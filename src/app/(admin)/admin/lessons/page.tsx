@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, getDocs } from "firebase/firestore";
+import { useState, useEffect, useMemo } from "react";
+import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, getDocs, writeBatch, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -10,9 +10,10 @@ import { FileCard } from "@/components/ui/file-card-collections";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Edit2, Save, Trash2, X, FileUp, File as FileIcon } from "lucide-react";
+import { Plus, Edit2, Save, Trash2, X, FileUp, File as FileIcon, Search, GraduationCap } from "lucide-react";
 import { type FormatFileProps } from "@/components/ui/file-card-collections";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface Lesson {
   id: number;
@@ -24,6 +25,7 @@ interface Lesson {
 
 export default function LessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   
@@ -44,6 +46,13 @@ export default function LessonsPage() {
     return () => unsubscribe();
   }, []);
 
+  const filteredLessons = useMemo(() => {
+    return lessons.filter(l => 
+      l.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      l.summary.some(s => s.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  }, [lessons, searchQuery]);
+
   if (loading) {
     return (
       <div className="space-y-8">
@@ -60,12 +69,35 @@ export default function LessonsPage() {
     );
   }
 
+  const reorderLessons = async (currentLessons: Lesson[]) => {
+    const sorted = [...currentLessons].sort((a, b) => a.order - b.order);
+    const batch = writeBatch(db);
+    let hasChanges = false;
+
+    sorted.forEach((lesson, idx) => {
+      const newOrder = idx + 1;
+      if (lesson.order !== newOrder) {
+        batch.set(doc(db, "lessons", lesson.id.toString()), {
+          ...lesson,
+          order: newOrder
+        });
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      await batch.commit();
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const summaryArray = form.summary.split('\n').filter(s => s.trim() !== "");
       
+      const lessonId = editingId || Date.now();
       let finalOrder = 0;
+      
       if (editingId) {
         finalOrder = lessons.find(l => l.id === editingId)?.order || 1;
       } else {
@@ -73,16 +105,25 @@ export default function LessonsPage() {
         finalOrder = maxOrder + 1;
       }
 
-      await setDoc(doc(db, "lessons", form.id.toString()), {
-        id: Number(form.id),
+      const newLesson = {
+        id: Number(lessonId),
         order: finalOrder,
         title: form.title,
         summary: summaryArray,
         file: form.file || ""
-      });
+      };
+
+      await setDoc(doc(db, "lessons", lessonId.toString()), newLesson);
+      
+      // Force a full reorder to ensure no gaps
+      const updatedList = editingId 
+        ? lessons.map(l => l.id === editingId ? newLesson : l)
+        : [...lessons, newLesson];
+      await reorderLessons(updatedList);
+
       setIsAdding(false);
       setEditingId(null);
-      setForm({ id: lessons.length > 0 ? Math.max(...lessons.map(l => l.id)) + 1 : 1, title: "", summary: "", file: "" });
+      setForm({ id: Date.now(), title: "", summary: "", file: "" });
     } catch (error) {
       console.error("Error saving lesson:", error);
     }
@@ -92,24 +133,8 @@ export default function LessonsPage() {
     if (confirm("Are you sure you want to delete this lesson?")) {
       try {
         await deleteDoc(doc(db, "lessons", id.toString()));
-        
-        // Fetch fresh lessons to ensure we have the latest state before reordering
-        const q = query(collection(db, "lessons"), orderBy("order", "asc"));
-        const snap = await getDocs(q);
-        
-        // Recalculate order for remaining lessons
-        const updates = snap.docs.map(async (d, idx) => {
-          const lesson = d.data() as Lesson;
-          const newOrder = idx + 1;
-          if (lesson.order !== newOrder) {
-            return setDoc(doc(db, "lessons", lesson.id.toString()), {
-              ...lesson,
-              order: newOrder
-            });
-          }
-        });
-        
-        await Promise.all(updates);
+        // Reorder remaining lessons
+        await reorderLessons(lessons.filter(l => l.id !== id));
       } catch (error) {
         console.error("Error deleting/reordering lessons:", error);
       }
@@ -129,19 +154,30 @@ export default function LessonsPage() {
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Lessons Management</h1>
           <p className="text-muted-foreground">Add, edit, or remove learning modules.</p>
         </div>
-        <Button onClick={() => {
-          setIsAdding(!isAdding);
-          setEditingId(null);
-          setForm({ id: lessons.length > 0 ? lessons[lessons.length-1].id + 1 : 1, title: "", summary: "", file: "" });
-        }} className="bg-primary hover:bg-primary/90 btn-glow">
-          {isAdding && !editingId ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-          {isAdding && !editingId ? "Cancel" : "Add Lesson"}
-        </Button>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="relative w-full md:w-64 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+            <Input 
+              placeholder="Search lessons..." 
+              className="pl-10 bg-white/5 border-white/10 focus:border-primary/50 transition-all rounded-xl"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <Button onClick={() => {
+            setIsAdding(!isAdding);
+            setEditingId(null);
+            setForm({ id: Date.now(), title: "", summary: "", file: "" });
+          }} className="bg-primary hover:bg-primary/90 btn-glow shrink-0">
+            {isAdding && !editingId ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+            {isAdding && !editingId ? "Cancel" : "Add Lesson"}
+          </Button>
+        </div>
       </div>
 
       {isAdding && (
@@ -149,13 +185,8 @@ export default function LessonsPage() {
           <Card className="glass-card p-6 border-primary/20">
             <h2 className="text-xl font-bold mb-4">{editingId ? "Edit Lesson" : "Create New Lesson"}</h2>
             <form onSubmit={handleSave} className="space-y-4">
-              <div className="grid grid-cols-4 gap-4">
-                <div className="col-span-1">
-                  <Input placeholder="Module ID" type="number" value={form.id} onChange={e => setForm({...form, id: Number(e.target.value)})} disabled={!!editingId} required className="bg-black/30" />
-                </div>
-                <div className="col-span-3">
-                  <Input placeholder="Lesson Title" value={form.title} onChange={e => setForm({...form, title: e.target.value})} required className="bg-black/30" />
-                </div>
+              <div className="grid grid-cols-1 gap-4">
+                <Input placeholder="Lesson Title" value={form.title} onChange={e => setForm({...form, title: e.target.value})} required className="bg-black/30" />
               </div>
               <div>
                 <Textarea placeholder="Summary points (one per line)" rows={5} value={form.summary} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setForm({...form, summary: e.target.value})} required className="bg-black/30 resize-none" />
@@ -174,8 +205,8 @@ export default function LessonsPage() {
                     try {
                       const res = await fetch("/api/upload", { method: "POST", body: formData });
                       if (res.ok) {
-                        const { url } = await res.json();
-                        setForm(prev => ({...prev, file: url}));
+                        const { path: filePath } = await res.json();
+                        setForm(prev => ({...prev, file: filePath}));
                       }
                     } catch (error) {
                       console.error("Upload failed", error);
@@ -208,7 +239,7 @@ export default function LessonsPage() {
       )}
 
       <div className="grid gap-4">
-        {lessons.map((lesson, idx) => (
+        {filteredLessons.map((lesson, idx) => (
           <HighlightCard key={lesson.id} glowColor="from-blue-500/10 to-transparent">
             <div className="flex-1">
               <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary mb-2">
@@ -239,8 +270,18 @@ export default function LessonsPage() {
             </div>
           </HighlightCard>
         ))}
-        {lessons.length === 0 && !isAdding && (
-          <div className="text-center py-10 text-muted-foreground">No lessons found. Click &quot;Add Lesson&quot; to create one.</div>
+        
+        {filteredLessons.length === 0 && !isAdding && (
+          <EmptyState 
+            icon={GraduationCap} 
+            title="No Lessons Found" 
+            description={searchQuery ? `No matches for "${searchQuery}". Try a different term.` : "Your curriculum is empty. Start by adding your first learning module."}
+            action={!searchQuery && (
+              <Button onClick={() => setIsAdding(true)} className="bg-primary/20 text-primary hover:bg-primary/30 border-primary/20">
+                <Plus className="w-4 h-4 mr-2" /> Add First Lesson
+              </Button>
+            )}
+          />
         )}
       </div>
     </div>

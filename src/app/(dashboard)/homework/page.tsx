@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { BookOpen, Clock, Calendar, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface Homework {
   id: string;
@@ -73,11 +74,11 @@ export default function StudentHomeworkPage() {
       </div>
 
       {homeworks.length === 0 ? (
-        <Card className="glass-card text-center p-12">
-          <Clock className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-          <h3 className="text-xl font-medium text-white mb-2">No Active Homework</h3>
-          <p className="text-muted-foreground">Great job! You've completed all assigned homework.</p>
-        </Card>
+        <EmptyState 
+          icon={Clock} 
+          title="No Active Homework" 
+          description="Great job! You've completed all assigned homework. Check back later for new assignments from your instructor."
+        />
       ) : (
         <div className="grid gap-6">
           {homeworks.map((hw, index) => {

@@ -18,6 +18,7 @@ interface UserData {
   accuracy: number;
   points?: number;
   streak?: number;
+  completedLessons?: number[];
 }
 
 interface Lesson {
@@ -75,14 +76,24 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="space-y-12 pb-10">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-2xl bg-white/5" />
+        <div className="space-y-4">
+          <Skeleton className="h-12 w-1/3 bg-white/5" />
+          <Skeleton className="h-6 w-1/4 bg-white/5" />
+        </div>
+
+        <Skeleton className="h-[450px] w-full rounded-[40px] bg-white/5" />
+        
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-2xl bg-white/5" />
           ))}
         </div>
-        <Skeleton className="h-[400px] w-full rounded-[40px] bg-white/5" />
-        <div className="space-y-6">
-          <Skeleton className="h-8 w-48 bg-white/5" />
+        
+        <div className="space-y-6 pt-10">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48 bg-white/5" />
+            <Skeleton className="h-4 w-64 bg-white/5" />
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(6)].map((_, i) => (
               <Skeleton key={i} className="h-48 rounded-[32px] bg-white/5" />
@@ -102,17 +113,37 @@ export default function DashboardPage() {
   const currentLessonTitle = currentLessonData?.title 
     ? `Module ${currentLessonDisplayNumber}: ${currentLessonData.title}` 
     : `Module ${currentLessonDisplayNumber}`;
+  
+  const completedCount = userData?.completedLessons?.length || 0;
+  const progressPercentage = lessons.length > 0 ? Math.round((completedCount / lessons.length) * 100) : 0;
 
   return (
     <div className="space-y-12 pb-10">
       <ContainerScroll
         titleComponent={
-          <div className="flex flex-col gap-2 mb-8">
-            <h1 className="text-5xl font-bold tracking-tight">
-              Welcome back, <br/>
-              <span className="text-primary">{userData?.name || "Student"}</span>
-            </h1>
-            <p className="text-muted-foreground text-xl">Here&apos;s your progress overview.</p>
+          <div className="flex flex-col gap-6 mb-8">
+            <div className="flex flex-col gap-2">
+              <h1 className="text-5xl font-bold tracking-tight">
+                Welcome back, <br/>
+                <span className="text-primary">{userData?.name || "Student"}</span>
+              </h1>
+              <p className="text-muted-foreground text-xl">Here&apos;s your progress overview.</p>
+            </div>
+            
+            <div className="max-w-md w-full space-y-2">
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-muted-foreground font-medium">Overall Progress</span>
+                <span className="text-primary font-bold">{progressPercentage}%</span>
+              </div>
+              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPercentage}%` }}
+                  transition={{ duration: 1, ease: "easeOut" }}
+                  className="h-full bg-primary shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                />
+              </div>
+            </div>
           </div>
         }
       >
@@ -190,13 +221,20 @@ export default function DashboardPage() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.5 }}>
-          <Card className="glass-card flex flex-col justify-between h-full hover:border-blue-500/30 transition-colors">
+          <Card className="glass-card flex flex-col justify-between h-full border-primary/20 bg-primary/5">
             <div className="flex items-center justify-between pb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">Submissions</h3>
-              <FileText className="h-4 w-4 text-blue-400" />
+              <h3 className="text-sm font-medium text-primary uppercase tracking-tighter">Current Goal</h3>
+              <Target className="h-4 w-4 text-primary animate-pulse" />
             </div>
-            <div>
-              <div className="text-3xl font-bold">{submissionsCount}</div>
+            <div className="space-y-2">
+              <div className="text-lg font-bold">Achieve 90% Accuracy</div>
+              <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all duration-500" 
+                  style={{ width: `${Math.min((userData?.accuracy || 0) / 90 * 100, 100)}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground">Current: {userData?.accuracy || 0}%</p>
             </div>
           </Card>
         </motion.div>

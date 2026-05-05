@@ -128,11 +128,11 @@ export default function AdminHomeworkPage() {
         </div>
         
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
+          <DialogTrigger render={
             <Button className="bg-primary hover:bg-primary/90 btn-glow">
               <Plus className="w-4 h-4 mr-2" /> Assign Homework
             </Button>
-          </DialogTrigger>
+          } />
           <DialogContent className="bg-black/90 border-white/10 text-white backdrop-blur-xl">
             <DialogHeader>
               <DialogTitle>Assign New Homework</DialogTitle>

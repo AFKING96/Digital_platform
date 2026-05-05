@@ -13,7 +13,21 @@ const materials = [
   { id: 2, title: "Principles of Accounting 2", filename: "Accounting2.pdf.pdf", size: "3.7 MB" },
 ];
 
+import { useState, useMemo } from "react";
+import { Search, FileText, Clock } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
+
 export default function MaterialsPage() {
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredMaterials = useMemo(() => {
+    return materials.filter(m => 
+      m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.filename.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [searchQuery]);
+
   const getFileExtension = (filename: string): FormatFileProps => {
     const ext = filename.split('.').pop()?.toLowerCase();
     const validExtensions: FormatFileProps[] = [
@@ -26,19 +40,38 @@ export default function MaterialsPage() {
 
   return (
     <div className="space-y-8 pb-10">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">Study Materials</h1>
-        <p className="text-muted-foreground">Access your course PDFs and documentation.</p>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold tracking-tight">Study Materials</h1>
+          <p className="text-muted-foreground">Access your course PDFs and documentation.</p>
+        </div>
+        
+        <div className="relative w-full md:w-80 group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+          <Input 
+            placeholder="Search materials..." 
+            className="pl-10 bg-white/5 border-white/10 focus:border-primary/50 transition-all rounded-xl"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {materials.map((material, index) => (
-          <motion.div
-            key={material.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: index * 0.1 }}
-          >
+      {filteredMaterials.length === 0 ? (
+        <EmptyState 
+          icon={FileText} 
+          title="No Materials Found" 
+          description={searchQuery ? `No results found for "${searchQuery}". Try a different search term.` : "No study materials have been uploaded yet. Check back soon!"}
+        />
+      ) : (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {filteredMaterials.map((material, index) => (
+            <motion.div
+              key={material.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: index * 0.1 }}
+            >
             <Card className="glass-card flex flex-col h-full hover:border-primary/50 transition-all duration-300 p-6">
               <div className="flex items-start gap-4 mb-6">
                 <div className="flex-shrink-0 mr-2">
@@ -78,6 +111,7 @@ export default function MaterialsPage() {
           </motion.div>
         ))}
       </div>
-    </div>
-  );
+    )}
+  </div>
+);
 }

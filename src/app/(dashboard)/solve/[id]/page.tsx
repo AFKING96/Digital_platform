@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, getDoc, addDoc, collection, updateDoc, serverTimestamp, getDocs, orderBy } from "firebase/firestore";
+import { doc, getDoc, addDoc, collection, updateDoc, serverTimestamp, getDocs, orderBy, query, where } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -58,7 +58,7 @@ export default function SolvePage() {
         const q = query(lessonsRef, where("id", "==", Number(params.id)));
         const lessonsSnap = await getDocs(q);
         if (!lessonsSnap.empty) {
-          setDisplayNumber(lessonsSnap.docs[0].data().order);
+          setDisplayNumber((lessonsSnap.docs[0].data() as any).order);
         }
 
       } catch (error) {
@@ -134,11 +134,38 @@ export default function SolvePage() {
       if (userSnap.exists()) {
         const ud = userSnap.data();
         
-        // Gamification: +10 base, +2 per correct
+        // 1. Gamification: +10 base, +2 per correct
         const gainedPoints = 10 + (score * 2);
         const newPoints = (ud.points || 0) + gainedPoints;
         
-        // Smart Tracking: Update performance array
+        // 2. Streak Logic
+        let currentStreak = ud.streak || 0;
+        const lastActive = ud.lastActiveDate ? new Date(ud.lastActiveDate) : null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        if (!lastActive) {
+          currentStreak = 1;
+        } else {
+          const lastDate = new Date(lastActive);
+          lastDate.setHours(0, 0, 0, 0);
+          const diffDays = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+
+          if (diffDays === 1) {
+            currentStreak += 1;
+          } else if (diffDays > 1) {
+            currentStreak = 1;
+          }
+          // if diffDays === 0, streak remains same (already active today)
+        }
+
+        // 3. Progress Tracking
+        const completedLessons = ud.completedLessons || [];
+        if (!completedLessons.includes(quiz.lessonId)) {
+          completedLessons.push(quiz.lessonId);
+        }
+
+        // 4. Smart Tracking: Update performance array
         const performance: PerformanceEntry[] = ud.performance || [];
         const existingPerfIdx = performance.findIndex((p: PerformanceEntry) => p.lessonId === quiz.lessonId);
         
@@ -146,7 +173,9 @@ export default function SolvePage() {
           lessonId: quiz.lessonId,
           type: quiz.questions[0]?.type || "mcq",
           correct: score,
-          wrong: totalGradable - score
+          wrong: totalGradable - score,
+          accuracy: accuracy,
+          timestamp: new Date().toISOString()
         };
 
         if (existingPerfIdx > -1) {
@@ -155,22 +184,28 @@ export default function SolvePage() {
           performance.push(newPerfEntry);
         }
 
-        // Update stats
+        // 5. Update Overall Stats
         const oldAccuracy = ud.accuracy || 0;
         const oldSolved = ud.solvedQuestions || 0;
         const newSolvedCount = oldSolved + totalGradable;
-        const newAccuracyValue = oldAccuracy === 0 ? accuracy : Math.round((oldAccuracy + accuracy) / 2);
+        const newAccuracyValue = oldSolved === 0 ? accuracy : Math.round(((oldAccuracy * oldSolved) + (accuracy * totalGradable)) / newSolvedCount);
         
+        // Update User Doc
         await updateDoc(userRef, {
           solvedQuestions: newSolvedCount,
           accuracy: newAccuracyValue,
           points: newPoints,
-          performance: performance
+          streak: currentStreak,
+          lastActiveDate: new Date().toISOString(),
+          completedLessons: completedLessons,
+          performance: performance,
+          currentLesson: Math.max(ud.currentLesson || 1, quiz.lessonId + 1)
         });
 
-        // 3. Notification: Result
+        // 6. Notification: Result
         await addDoc(collection(db, "notifications"), {
           userId: auth.currentUser.uid,
+          title: "Quiz Completed",
           message: `You completed Module ${displayNumber || quiz.lessonId} with ${accuracy}% accuracy! +${gainedPoints} points earned.`,
           type: "result",
           read: false,

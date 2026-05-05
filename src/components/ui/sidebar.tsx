@@ -5,7 +5,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { motion, AnimatePresence, type Transition } from "framer-motion";
 import { NotificationBell } from "@/components/ui/notification-bell";
 import {
-  UserSearch,
+  Users,
+  Calendar as CalendarIcon,
+  DollarSign,
   BookOpen,
   FileCheck,
   Target,
@@ -95,12 +97,14 @@ export function SessionNavBar() {
   const adminLinks = [
     { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
     { href: "/admin/students", label: "Students", icon: UserCircle },
+    { href: "/admin/groups", label: "Groups", icon: Users },
+    { href: "/admin/calendar", label: "Calendar", icon: CalendarIcon },
     { href: "/admin/at-risk", label: "At-Risk", icon: AlertTriangle },
     { href: "/admin/homework", label: "Homework", icon: ClipboardList },
     { href: "/admin/lessons", label: "Lessons", icon: GraduationCap },
     { href: "/admin/quizzes", label: "Quizzes", icon: FileClock },
     { href: "/admin/materials", label: "Materials", icon: Layout },
-    { href: "/admin/finance", label: "Finance", icon: UserSearch },
+    { href: "/admin/finance", label: "Finance", icon: DollarSign },
     { href: "/admin/submissions", label: "Submissions", icon: MessagesSquare },
   ];
 
@@ -223,23 +227,34 @@ export function SessionNavBar() {
               <div className="flex grow flex-col gap-4">
                 <ScrollArea className="h-16 grow p-2">
                   <div className={cn("flex w-full flex-col gap-1")}>
-                    {links.map((link) => (
-                      <Link
-                        key={link.href}
-                        href={link.href}
-                        className={cn(
-                          "flex h-8 w-full flex-row items-center rounded-md px-2 py-1.5 transition hover:bg-muted hover:text-primary",
-                          pathname === link.href && "bg-muted text-blue-600",
-                        )}
-                      >
-                        <link.icon className="h-4 w-4" />
-                        <motion.span variants={variants} className="flex items-center">
-                          {!isCollapsed && (
-                            <p className="ml-2 text-sm font-medium">{link.label}</p>
+                    {links.map((link) => {
+                      const isActive = pathname === link.href;
+                      return (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          className={cn(
+                            "group relative flex h-10 w-full flex-row items-center rounded-xl px-3 py-2 transition-all duration-300",
+                            isActive 
+                              ? "bg-primary/10 text-primary shadow-[0_0_20px_rgba(59,130,246,0.1)]" 
+                              : "text-muted-foreground hover:bg-white/5 hover:text-white"
                           )}
-                        </motion.span>
-                      </Link>
-                    ))}
+                        >
+                          {isActive && (
+                            <motion.div 
+                              layoutId="active-nav-indicator"
+                              className="absolute left-0 w-1 h-6 bg-primary rounded-r-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                            />
+                          )}
+                          <link.icon className={cn("h-4 w-4 transition-transform group-hover:scale-110", isActive && "text-primary")} />
+                          <motion.span variants={variants} className="flex items-center">
+                            {!isCollapsed && (
+                              <p className="ml-3 text-sm font-medium">{link.label}</p>
+                            )}
+                          </motion.span>
+                        </Link>
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               </div>
