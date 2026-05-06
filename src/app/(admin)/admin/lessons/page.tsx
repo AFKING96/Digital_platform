@@ -142,19 +142,19 @@ export default function LessonsPage() {
       // Quiz (ID is lessonId)
       batch.delete(doc(db, "quizzes", deleteId.toString()));
       
-      // Materials
-      const materialsSnap = await getDocs(query(collection(db, "materials"), where("lessonId", "==", deleteId)));
-      materialsSnap.forEach(d => batch.delete(d.ref));
+      // Practice Questions
+      const practiceSnap = await getDocs(query(collection(db, "practice_questions"), where("lessonId", "==", deleteId)));
+      practiceSnap.forEach(d => batch.delete(d.ref));
       
-      // Homework
-      const homeworkSnap = await getDocs(query(collection(db, "homework"), where("lessonId", "==", deleteId)));
+      // Homework Questions
+      const homeworkSnap = await getDocs(query(collection(db, "homework_questions"), where("lessonId", "==", deleteId)));
       homeworkSnap.forEach(d => batch.delete(d.ref));
       
       // 2. Delete the lesson itself
       batch.delete(doc(db, "lessons", deleteId.toString()));
       
       // 3. Delete Submissions
-      const subSnap = await getDocs(query(collection(db, "submissions"), where("lessonId", "==", deleteId.toString())));
+      const subSnap = await getDocs(query(collection(db, "submissions"), where("lessonId", "==", deleteId)));
       subSnap.forEach(d => batch.delete(d.ref));
       
       await batch.commit();

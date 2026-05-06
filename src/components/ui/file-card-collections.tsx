@@ -31,6 +31,7 @@ export type FormatFileProps =
 
 type FileCardProps = {
   formatFile: FormatFileProps;
+  className?: string;
 };
 
 const DefaultPlaceholder = () => {
@@ -91,7 +92,7 @@ const colorBannerMap: Record<FormatFileProps, string> = {
   video: "bg-green-700 text-white",
 };
 
-export const FileCard = ({ formatFile }: FileCardProps) => {
+export const FileCard = ({ formatFile, className }: FileCardProps) => {
   const colorBannerClass = colorBannerMap[formatFile];
   let filePlaceholder: ReactNode = null;
 
@@ -370,10 +371,10 @@ export const FileCard = ({ formatFile }: FileCardProps) => {
   const sizeClass = "w-14 h-18";
 
   return (
-    <div aria-hidden className="relative size-fit">
+    <div aria-hidden className={cn("relative size-fit", className)}>
       <div
         className={cn(
-          "absolute -right-2 bottom-1.5 z-10 rounded px-1.5 py-0.5 text-[8px] font-medium uppercase",
+          "absolute -right-2 bottom-1.5 z-[2] rounded px-1.5 py-0.5 text-[8px] font-medium uppercase",
           colorBannerClass
         )}
       >
@@ -381,7 +382,7 @@ export const FileCard = ({ formatFile }: FileCardProps) => {
       </div>
       <div
         className={cn(
-          "dark:bg-secondary ring-border relative z-0 space-y-3 rounded-md bg-white p-2 ring-1",
+          "dark:bg-secondary ring-border relative z-[1] space-y-3 rounded-md bg-white p-2 ring-1",
           sizeClass
         )}
       >
@@ -390,3 +391,5 @@ export const FileCard = ({ formatFile }: FileCardProps) => {
     </div>
   );
 };
+
+export default FileCard;

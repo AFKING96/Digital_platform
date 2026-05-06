@@ -6,7 +6,7 @@ import { auth, db } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PlayCircle, Target, CheckCircle2, FileText, ArrowRight, Lock, BookOpen, Flame, Star } from "lucide-react";
+import { PlayCircle, Target, CheckCircle2, FileText, ArrowRight, Lock, BookOpen, Flame, Star, ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { ContainerScroll } from "@/components/ui/container-scroll-animation";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -150,19 +150,33 @@ export default function DashboardPage() {
           
           <div className="relative z-10 flex flex-col items-center gap-6">
             <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-              Current Session
+              Current Lesson
             </div>
             <h2 className="text-4xl md:text-5xl font-bold text-white">{currentLessonTitle}</h2>
             <p className="text-lg text-white/70 max-w-lg">
-              Continue your learning journey. You&apos;re making great progress in this module.
+              Follow your lesson workflow to master the material.
             </p>
             
-            <Link href={`/lesson/${currentLesson}`}>
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground btn-glow px-8 py-6 text-lg rounded-xl flex items-center gap-2 mt-4 transition-all hover:scale-105">
-                Continue Practice
-                <ArrowRight className="w-5 h-5" />
-              </Button>
-            </Link>
+            <div className="flex flex-wrap justify-center gap-4 mt-4">
+              <Link href={`/materials`}>
+                <Button variant="outline" className="border-white/10 hover:bg-white/5 h-14 px-6 rounded-2xl flex items-center gap-2 group">
+                  <BookOpen className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
+                  Materials
+                </Button>
+              </Link>
+              <Link href={`/practice/${currentLesson}`}>
+                <Button className="bg-primary hover:bg-primary/90 text-white h-14 px-8 rounded-2xl flex items-center gap-2 shadow-[0_0_30px_rgba(var(--primary),0.3)] hover:scale-105 transition-all">
+                  <Target className="w-5 h-5" />
+                  Start Practice
+                </Button>
+              </Link>
+              <Link href={`/homework/${currentLesson}`}>
+                <Button variant="outline" className="border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 h-14 px-6 rounded-2xl flex items-center gap-2 group">
+                  <ClipboardList className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                  Homework
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </ContainerScroll>

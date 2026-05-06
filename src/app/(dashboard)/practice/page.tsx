@@ -1,149 +1,146 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { collection, getDocs, doc, getDoc, query, orderBy, onSnapshot } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { useState, useEffect } from "react";
+import { collection, query, onSnapshot, orderBy, where, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Lock, PlayCircle, RotateCcw, BookOpen } from "lucide-react";
+import { GraduationCap, Target, ChevronRight, CheckCircle2, Clock, BarChart2 } from "lucide-react";
 import Link from "next/link";
-import { TiltCard } from "@/components/ui/tilt-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/components/providers/auth-provider";
 
 interface Lesson {
   id: number;
-  order: number;
   title: string;
-  summary: string[];
+  order: number;
 }
 
-export default function PracticePage() {
+interface Question {
+  id: string;
+  lessonId: number;
+}
+
+export default function PracticeLandingPage() {
+  const { user } = useAuth();
   const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [currentLesson, setCurrentLesson] = useState<number>(1);
+  const [questionsCount, setQuestionsCount] = useState<Record<number, number>>({});
+  const [solvedCount, setSolvedCount] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!auth.currentUser) return;
+    // Fetch Lessons
+    const unsubLessons = onSnapshot(query(collection(db, "lessons"), orderBy("order", "asc")), async (snap) => {
+      const lessonData = snap.docs.map(d => ({ id: d.data().id, title: d.data().title, order: d.data().order }));
+      setLessons(lessonData);
 
-    // 1. Real-time User Data
-    const userUnsubscribe = onSnapshot(doc(db, "users", auth.currentUser.uid), (docSnap) => {
-      if (docSnap.exists()) {
-        setCurrentLesson(docSnap.data().currentLesson);
+      // Fetch Question Counts for each lesson
+      const qSnap = await getDocs(collection(db, "practice_questions"));
+      const counts: Record<number, number> = {};
+      qSnap.docs.forEach(doc => {
+        const lid = doc.data().lessonId;
+        counts[lid] = (counts[lid] || 0) + 1;
+      });
+      setQuestionsCount(counts);
+
+      // Fetch Solved Counts for current user
+      if (user) {
+        const sSnap = await getDocs(query(collection(db, "submissions"), where("userId", "==", user.uid)));
+        const solved: Record<number, number> = {};
+        // We need a way to know if it was a practice submission.
+        // For now, let's assume we track it in the submission metadata.
+        // Actually, we'll implement a better tracking in the solver.
+        setSolvedCount(solved);
       }
-    });
-
-    // 2. Real-time Lessons
-    const lessonsQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
-    const lessonsUnsubscribe = onSnapshot(lessonsQuery, (snapshot) => {
-      const lessonsData = snapshot.docs.map(doc => ({
-        ...doc.data()
-      })) as Lesson[];
-      setLessons(lessonsData);
+      
       setLoading(false);
     });
 
-    return () => {
-      userUnsubscribe();
-      lessonsUnsubscribe();
-    };
-  }, []);
+    return () => unsubLessons();
+  }, [user]);
 
-  if (loading) {
-    return (
-      <div className="space-y-8 pb-10">
-        <div className="space-y-4">
-          <Skeleton className="h-10 w-48 bg-white/5" />
-          <Skeleton className="h-4 w-64 bg-white/5" />
-        </div>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {[...Array(6)].map((_, i) => (
-            <Skeleton key={i} className="h-48 w-full rounded-2xl bg-white/5" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const currentIdx = lessons.findIndex(l => l.id === currentLesson);
-  const currentDisplayNum = currentIdx !== -1 ? currentIdx + 1 : (lessons.length > 0 ? 1 : currentLesson);
+  if (loading) return <div className="p-8 space-y-4"><Skeleton className="h-64 w-full bg-white/5" /><Skeleton className="h-64 w-full bg-white/5" /></div>;
 
   return (
-    <div className="space-y-8 pb-10">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">Practice Modules</h1>
-        <p className="text-muted-foreground">Select a module to begin or review your learning.</p>
+    <div className="p-8 space-y-8 max-w-6xl mx-auto">
+      <div className="space-y-2">
+        <h1 className="text-4xl font-black bg-gradient-to-r from-white via-white to-white/40 bg-clip-text text-transparent">
+          Daily Practice
+        </h1>
+        <p className="text-muted-foreground text-lg">Master your lessons through interactive in-class and self-paced solving.</p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {lessons.map((lesson, index) => {
-          const isCompleted = lesson.order < currentDisplayNum;
-          const isAvailable = lesson.order === currentDisplayNum;
-          const isLocked = lesson.order > currentDisplayNum;
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {lessons.map((lesson, idx) => {
+          const total = questionsCount[lesson.id] || 0;
+          const solved = solvedCount[lesson.id] || 0;
+          const progress = total > 0 ? (solved / total) * 100 : 0;
 
           return (
             <motion.div
               key={lesson.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: index * 0.1 }}
+              transition={{ delay: idx * 0.05 }}
             >
-              <TiltCard>
-                <Card className={`glass-card h-full flex flex-col relative overflow-hidden transition-all duration-300 ${
-                  isLocked ? 'opacity-60 grayscale hover:grayscale-0' : 'hover:border-primary/50'
-                }`}>
-                  {/* Status Badge */}
-                  <div className="mb-4">
-                    {isCompleted && (
-                      <span className="inline-flex items-center rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-0.5 text-xs font-semibold text-green-400">
-                        Completed
-                      </span>
-                    )}
-                    {isAvailable && (
-                      <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                        Available Now
-                      </span>
-                    )}
-                    {isLocked && (
-                      <span className="inline-flex items-center rounded-full border border-muted-foreground/30 bg-muted-foreground/10 px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
-                        Locked
-                      </span>
-                    )}
+              <Link href={`/practice/${lesson.id}`}>
+                <Card className="p-6 bg-white/5 border-white/10 hover:border-primary/50 transition-all group relative overflow-hidden h-full flex flex-col">
+                  <div className="absolute top-0 right-0 p-8 bg-primary/5 rounded-bl-[100px] -mr-4 -mt-4 transition-all group-hover:bg-primary/10" />
+                  
+                  <div className="flex-1 space-y-4 relative z-10">
+                    <div className="flex items-center justify-between">
+                      <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary font-bold">
+                        {lesson.order}
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Lesson {lesson.order}</span>
+                    </div>
+
+                    <div>
+                      <h3 className="text-xl font-bold group-hover:text-primary transition-colors line-clamp-1">{lesson.title}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">{total} Practice Questions</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                        <span className="text-muted-foreground">Progress</span>
+                        <span className="text-primary">{Math.round(progress)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${progress}%` }}
+                          className="h-full bg-primary shadow-[0_0_10px_rgba(var(--primary),0.5)]" 
+                        />
+                      </div>
+                    </div>
                   </div>
 
-                  <h3 className="text-xl font-bold mb-2 text-white">{lesson.title}</h3>
-                  <p className="text-sm text-muted-foreground line-clamp-2 flex-1">
-                    Module {lesson.order}
-                  </p>
-
-                  <div className="mt-6 pt-4 border-t border-white/5">
-                    {isLocked ? (
-                      <Button disabled variant="outline" className="w-full bg-black/20 border-white/10 text-muted-foreground flex items-center justify-center gap-2">
-                        <Lock className="w-4 h-4" />
-                        Locked
-                      </Button>
-                    ) : isAvailable ? (
-                      <Link href={`/lesson/${lesson.id}`} className="block">
-                        <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground btn-glow flex items-center justify-center gap-2">
-                          <PlayCircle className="w-4 h-4" />
-                          Start Module
-                        </Button>
-                      </Link>
-                    ) : (
-                      <Link href={`/lesson/${lesson.id}`} className="block">
-                        <Button variant="outline" className="w-full bg-secondary/10 hover:bg-secondary/20 border-secondary/20 text-secondary-foreground flex items-center justify-center gap-2">
-                          <RotateCcw className="w-4 h-4" />
-                          Review
-                        </Button>
-                      </Link>
-                    )}
+                  <div className="mt-6 flex items-center justify-between pt-6 border-t border-white/5 relative z-10">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" /> {solved} Done
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                        <Clock className="w-3 h-3 text-orange-400" /> {total - solved} Left
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
                   </div>
                 </Card>
-              </TiltCard>
+              </Link>
             </motion.div>
           );
         })}
       </div>
+
+      {lessons.length === 0 && (
+        <div className="text-center py-32 border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.02]">
+          <Target className="w-20 h-20 text-white/5 mx-auto mb-6" />
+          <h2 className="text-2xl font-bold">No Lessons Available</h2>
+          <p className="text-muted-foreground mt-2 max-w-sm mx-auto">Please check back later or contact your administrator for assigned curriculum.</p>
+        </div>
+      )}
     </div>
   );
 }

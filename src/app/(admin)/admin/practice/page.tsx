@@ -1,18 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, orderBy, where } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, orderBy, where, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Edit2, ClipboardList, Clock, Save, Image as ImageIcon, Link as LinkIcon, HelpCircle, X, Check, Calendar } from "lucide-react";
+import { Plus, Trash2, Edit2, Target, Search, X, Check, Layout, BarChart3, Save, Image as ImageIcon, Link as LinkIcon, HelpCircle } from "lucide-react";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
-import { BarChart3 } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -21,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-interface Homework {
+interface Question {
   id: string;
   lessonId: number;
   type: "MCQ" | "TF" | "Essay" | "Image" | "Form";
@@ -31,7 +30,6 @@ interface Homework {
   explanation?: string;
   imageUrl?: string;
   link?: string;
-  deadline?: any;
   order: number;
   createdAt: any;
 }
@@ -42,16 +40,16 @@ interface Lesson {
   order: number;
 }
 
-export default function HomeworkAdminPage() {
+export default function PracticeAdminPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [homeworks, setHomeworks] = useState<Homework[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedLessonId, setSelectedLessonId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  const [form, setForm] = useState<Partial<Homework>>({
+  const [form, setForm] = useState<Partial<Question>>({
     type: "MCQ",
     content: "",
     options: ["", "", "", ""],
@@ -59,7 +57,6 @@ export default function HomeworkAdminPage() {
     explanation: "",
     imageUrl: "",
     link: "",
-    deadline: "",
     order: 1
   });
 
@@ -75,38 +72,37 @@ export default function HomeworkAdminPage() {
       setLoading(false);
     });
 
-    // Fetch All Homework
-    const unsubHomework = onSnapshot(query(collection(db, "homework_questions"), orderBy("order", "asc")), (snap) => {
-      setHomeworks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Homework)));
+    // Fetch All Practice Questions
+    const unsubQuestions = onSnapshot(query(collection(db, "practice_questions"), orderBy("order", "asc")), (snap) => {
+      setQuestions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Question)));
     });
 
     return () => {
       unsubLessons();
-      unsubHomework();
+      unsubQuestions();
     };
   }, []);
 
-  const handleSaveHomework = async (id?: string) => {
+  const handleSaveQuestion = async (id?: string) => {
     if (!selectedLessonId) return;
     
-    const hId = id || Date.now().toString();
-    const hData = {
+    const qId = id || Date.now().toString();
+    const qData = {
       ...form,
       lessonId: selectedLessonId,
       updatedAt: serverTimestamp(),
       createdAt: form.createdAt || serverTimestamp(),
-      deadline: form.deadline ? new Date(form.deadline) : null,
-      order: form.order || (homeworks.filter(h => h.lessonId === selectedLessonId).length + 1)
+      order: form.order || (questions.filter(q => q.lessonId === selectedLessonId).length + 1)
     };
 
     try {
-      await setDoc(doc(db, "homework_questions", hId), hData);
+      await setDoc(doc(db, "practice_questions", qId), qData);
       setIsAdding(false);
       setEditingId(null);
       resetForm();
     } catch (e) {
       console.error(e);
-      alert("Error saving homework.");
+      alert("Error saving question.");
     }
   };
 
@@ -119,7 +115,6 @@ export default function HomeworkAdminPage() {
       explanation: "",
       imageUrl: "",
       link: "",
-      deadline: "",
       order: 1
     });
   };
@@ -128,7 +123,7 @@ export default function HomeworkAdminPage() {
     if (!deleteId) return;
     setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "homework_questions", deleteId));
+      await deleteDoc(doc(db, "practice_questions", deleteId));
       setDeleteId(null);
     } catch (e) { console.error(e); }
     finally { setIsDeleting(false); }
@@ -136,16 +131,16 @@ export default function HomeworkAdminPage() {
 
   if (loading) return <div className="p-8"><Skeleton className="h-64 w-full bg-white/5" /></div>;
 
-  const currentLessonHomework = homeworks.filter(h => h.lessonId === selectedLessonId);
+  const currentLessonQuestions = questions.filter(q => q.lessonId === selectedLessonId);
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
-            Homework Management
+            Practice Management
           </h1>
-          <p className="text-muted-foreground mt-1">Create after-class assignments with deadlines and tracking.</p>
+          <p className="text-muted-foreground mt-1">Design in-class solving sessions linked to your curriculum.</p>
         </div>
         <div className="flex gap-4">
           <Select 
@@ -163,23 +158,24 @@ export default function HomeworkAdminPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button onClick={() => { resetForm(); setIsAdding(true); }} className="bg-emerald-500 hover:bg-emerald-600 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
-            <Plus className="w-4 h-4 mr-2" /> New Homework
+          <Button onClick={() => { resetForm(); setIsAdding(true); }} className="bg-primary hover:bg-primary/90">
+            <Plus className="w-4 h-4 mr-2" /> Add Question
           </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
+        {/* Editor Overlay / Form */}
         <AnimatePresence>
           {(isAdding || editingId) && (
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
               <Card className="p-8 bg-white/5 border-white/10 backdrop-blur-2xl relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
+                <div className="absolute top-0 left-0 w-1 h-full bg-primary shadow-[0_0_20px_rgba(var(--primary),0.5)]" />
                 
                 <div className="flex justify-between items-center mb-8">
                   <h2 className="text-xl font-bold flex items-center gap-2">
-                    <ClipboardList className="w-5 h-5 text-emerald-400" />
-                    {editingId ? "Edit Homework" : "New Homework Assignment"}
+                    <HelpCircle className="w-5 h-5 text-primary" />
+                    {editingId ? "Edit Question" : "New Practice Question"}
                   </h2>
                   <Button variant="ghost" size="icon" onClick={() => { setIsAdding(false); setEditingId(null); }}>
                     <X className="w-5 h-5" />
@@ -189,7 +185,7 @@ export default function HomeworkAdminPage() {
                 <div className="grid lg:grid-cols-2 gap-8">
                   <div className="space-y-6">
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Assignment Type</label>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Question Type</label>
                       <div className="flex flex-wrap gap-2">
                         {["MCQ", "TF", "Essay", "Image", "Form"].map(t => (
                           <button
@@ -197,7 +193,7 @@ export default function HomeworkAdminPage() {
                             onClick={() => setForm({...form, type: t as any})}
                             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                               form.type === t 
-                                ? "bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]" 
+                                ? "bg-primary text-white shadow-[0_0_15px_rgba(var(--primary),0.3)]" 
                                 : "bg-white/5 text-muted-foreground hover:bg-white/10"
                             }`}
                           >
@@ -208,9 +204,9 @@ export default function HomeworkAdminPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Assignment Content</label>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Question Content</label>
                       <Textarea 
-                        placeholder="Describe the homework assignment..." 
+                        placeholder="Type your question here..." 
                         value={form.content}
                         onChange={e => setForm({...form, content: e.target.value})}
                         className="min-h-[120px] bg-black/50"
@@ -249,25 +245,28 @@ export default function HomeworkAdminPage() {
                         ))}
                       </div>
                     )}
+
+                    {form.type === "TF" && (
+                      <div className="flex gap-4">
+                        <Button 
+                          variant="outline" 
+                          className={`flex-1 ${form.answer === "True" ? "bg-emerald-500/20 border-emerald-500/50" : ""}`}
+                          onClick={() => setForm({...form, answer: "True"})}
+                        >True</Button>
+                        <Button 
+                          variant="outline"
+                          className={`flex-1 ${form.answer === "False" ? "bg-red-500/20 border-red-500/50" : ""}`}
+                          onClick={() => setForm({...form, answer: "False"})}
+                        >False</Button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-6">
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1 flex items-center gap-2">
-                        <Calendar className="w-3 h-3" /> Submission Deadline
-                      </label>
-                      <Input 
-                        type="datetime-local" 
-                        value={form.deadline ? new Date(form.deadline).toISOString().slice(0, 16) : ""}
-                        onChange={e => setForm({...form, deadline: e.target.value})}
-                        className="bg-black/30"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Explanation / Hint</label>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Explanation (Optional)</label>
                       <Textarea 
-                        placeholder="Add a hint or explanation..." 
+                        placeholder="Explain the correct answer..." 
                         value={form.explanation}
                         onChange={e => setForm({...form, explanation: e.target.value})}
                         className="bg-black/30 h-24"
@@ -276,27 +275,35 @@ export default function HomeworkAdminPage() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Attachment (Image URL)</label>
-                        <Input 
-                          placeholder="Optional image..." 
-                          value={form.imageUrl}
-                          onChange={e => setForm({...form, imageUrl: e.target.value})}
-                        />
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Image URL</label>
+                        <div className="relative">
+                          <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input 
+                            placeholder="Optional image..." 
+                            value={form.imageUrl}
+                            onChange={e => setForm({...form, imageUrl: e.target.value})}
+                            className="pl-10"
+                          />
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">External Link</label>
-                        <Input 
-                          placeholder="Optional link..." 
-                          value={form.link}
-                          onChange={e => setForm({...form, link: e.target.value})}
-                        />
+                        <div className="relative">
+                          <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input 
+                            placeholder="Optional link..." 
+                            value={form.link}
+                            onChange={e => setForm({...form, link: e.target.value})}
+                            className="pl-10"
+                          />
+                        </div>
                       </div>
                     </div>
 
                     <div className="pt-8 border-t border-white/5 flex justify-end gap-3">
                       <Button variant="ghost" onClick={() => { setIsAdding(false); setEditingId(null); }}>Cancel</Button>
-                      <Button onClick={() => handleSaveHomework(editingId as string)} className="bg-emerald-500 hover:bg-emerald-600 px-8">
-                        <Save className="w-4 h-4 mr-2" /> Save Assignment
+                      <Button onClick={() => handleSaveQuestion(editingId as string)} className="bg-primary hover:bg-primary/90 px-8">
+                        <Save className="w-4 h-4 mr-2" /> Save Question
                       </Button>
                     </div>
                   </div>
@@ -306,18 +313,19 @@ export default function HomeworkAdminPage() {
           )}
         </AnimatePresence>
 
+        {/* Questions List */}
         <div className="space-y-4">
           <div className="flex items-center justify-between px-2">
             <h2 className="font-bold flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-emerald-400" />
-              Lesson {selectedLessonId} Homework
+              <Layout className="w-4 h-4 text-primary" />
+              Lesson {selectedLessonId} Content
             </h2>
-            <span className="text-xs text-muted-foreground font-medium">{currentLessonHomework.length} Assignments</span>
+            <span className="text-xs text-muted-foreground font-medium">{currentLessonQuestions.length} Questions total</span>
           </div>
 
           <div className="grid gap-4">
-            {currentLessonHomework.map((h, idx) => (
-              <motion.div key={h.id} layout>
+            {currentLessonQuestions.map((q, idx) => (
+              <motion.div key={q.id} layout>
                 <Card className="p-6 bg-white/5 border-white/10 hover:border-white/20 transition-all flex gap-6 group">
                   <div className="flex flex-col items-center gap-2 pt-1">
                     <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-xs font-bold text-muted-foreground">
@@ -329,49 +337,59 @@ export default function HomeworkAdminPage() {
                   <div className="flex-1 space-y-4">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">{h.type}</span>
-                          {h.deadline && (
-                            <span className="text-[10px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded flex items-center gap-1">
-                              <Clock className="w-2.5 h-2.5" /> 
-                              {new Date(h.deadline?.toDate ? h.deadline.toDate() : h.deadline).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-white font-medium text-lg leading-snug">{h.content}</p>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-primary mb-1 block">{q.type}</span>
+                        <p className="text-white font-medium text-lg leading-snug">{q.content}</p>
                       </div>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/5" onClick={() => {
-                          setForm({...h, deadline: h.deadline?.toDate ? h.deadline.toDate() : h.deadline});
-                          setEditingId(h.id);
+                          setForm(q);
+                          setEditingId(q.id);
                         }}>
                           <Edit2 className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-500/10 text-red-400" onClick={() => setDeleteId(h.id)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-500/10 text-red-400" onClick={() => setDeleteId(q.id)}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
                     </div>
 
+                    {q.options && q.options.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {q.options.map((opt, i) => (
+                          <div key={i} className={`p-2 rounded-lg text-sm flex items-center gap-2 ${
+                            q.answer === opt ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-white/5 text-muted-foreground border border-white/10"
+                          }`}>
+                            <span className="font-bold opacity-50">{String.fromCharCode(65 + i)}.</span>
+                            <span className="truncate">{opt}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-6 pt-2">
                        <Link 
-                         href={`/admin/analytics/question/${h.id}`}
-                         className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest hover:text-emerald-500 transition-colors"
+                         href={`/admin/analytics/question/${q.id}`}
+                         className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest hover:text-primary transition-colors"
                        >
-                         <BarChart3 className="w-3 h-3 text-emerald-500" /> View Analytics
+                         <BarChart3 className="w-3 h-3 text-primary" /> Real-time Analytics
                        </Link>
+                       {q.explanation && (
+                         <div className="text-[10px] font-bold text-emerald-500/60 uppercase tracking-widest">
+                           Explanation Added
+                         </div>
+                       )}
                     </div>
                   </div>
                 </Card>
               </motion.div>
             ))}
 
-            {currentLessonHomework.length === 0 && !isAdding && (
+            {currentLessonQuestions.length === 0 && !isAdding && (
               <div className="text-center py-20 border-2 border-dashed border-white/5 rounded-[40px] bg-black/20">
-                <ClipboardList className="w-16 h-16 text-white/5 mx-auto mb-4" />
-                <h3 className="text-xl font-bold">No Homework Assigned</h3>
-                <p className="text-muted-foreground mt-2">Assign after-class homework for this lesson to track student progress.</p>
-                <Button onClick={() => setIsAdding(true)} variant="link" className="text-emerald-400 mt-4">Add first assignment</Button>
+                <Target className="w-16 h-16 text-white/5 mx-auto mb-4" />
+                <h3 className="text-xl font-bold">No Practice Questions</h3>
+                <p className="text-muted-foreground mt-2">Start adding questions to this lesson for interactive in-class solving.</p>
+                <Button onClick={() => setIsAdding(true)} variant="link" className="text-primary mt-4">Add your first question</Button>
               </div>
             )}
           </div>
@@ -383,8 +401,8 @@ export default function HomeworkAdminPage() {
         onOpenChange={open => !open && setDeleteId(null)}
         onConfirm={handleDelete}
         loading={isDeleting}
-        title="Delete Homework"
-        description="This will permanently remove this assignment. All student submissions and analytics for this homework will be deleted."
+        title="Delete Practice Question"
+        description="This will permanently remove this question from the lesson. Student submissions for this specific question will be lost."
       />
     </div>
   );
