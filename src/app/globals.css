@@ -65,13 +65,18 @@
 
 @layer base {
   * {
-    @apply border-border outline-none;
+    border-color: var(--border);
+    outline: none;
   }
   *:focus-visible {
-    @apply ring-2 ring-primary ring-offset-2 ring-offset-background;
+    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--primary);
   }
   body {
-    @apply bg-background text-foreground bg-[#0B1220] min-h-screen relative overflow-x-hidden;
+    background-color: #0B1220;
+    color: var(--foreground);
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
     font-family: var(--font-sans);
   }
   h1, h2, h3, h4, h5, h6 {

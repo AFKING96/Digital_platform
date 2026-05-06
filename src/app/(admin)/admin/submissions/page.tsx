@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, onSnapshot, doc, updateDoc, getDoc, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, updateDoc, getDoc, getDocs, orderBy, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
