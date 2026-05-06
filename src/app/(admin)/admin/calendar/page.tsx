@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 
 interface Student {
   id: string;
@@ -43,6 +44,8 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [form, setForm] = useState({
     title: "",
@@ -159,12 +162,17 @@ export default function CalendarPage() {
     }
   };
 
-  const handleDeleteSession = async (id: string) => {
-    if (!confirm("Delete this session?")) return;
+  const handleDeleteSession = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "sessions", id));
+      await deleteDoc(doc(db, "sessions", deleteId));
+      setDeleteId(null);
     } catch (error) {
       console.error("Error deleting session:", error);
+      alert("Failed to delete session.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -301,7 +309,7 @@ export default function CalendarPage() {
                     <Button variant="outline" size="sm" className="h-9 px-4 border-white/10 hover:bg-primary hover:text-white transition-all" onClick={() => setSelectedSession(session)}>
                       <DollarSign className="w-4 h-4 mr-2" /> Track Payments
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-9 w-9 text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => handleDeleteSession(session.id)}>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => setDeleteId(session.id)}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -383,6 +391,15 @@ export default function CalendarPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <DeleteDialog 
+        isOpen={!!deleteId} 
+        onOpenChange={(open) => !open && setDeleteId(null)} 
+        onConfirm={handleDeleteSession}
+        loading={isDeleting}
+        title="Delete Session"
+        description="This will permanently delete this scheduled session. Note: Any payment logs already created for this session will remain in the finance records."
+      />
     </div>
   );
 }

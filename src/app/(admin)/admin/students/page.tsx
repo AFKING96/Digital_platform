@@ -8,9 +8,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus, Save, User as UserIcon, BookOpen, Target, CheckCircle2, DollarSign, Upload } from "lucide-react";
+import { Search, Plus, Save, User as UserIcon, BookOpen, Target, CheckCircle2, DollarSign, Upload, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
+import { writeBatch, arrayRemove, deleteField } from "firebase/firestore";
 
 interface Student {
   id: string;
@@ -28,7 +30,9 @@ export default function StudentsPage() {
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [lessons, setLessons] = useState<{id: number, title: string}[]>([]);
+  const [lessons, setLessons] = useState<{id: number, title: string, order: number}[]>([]);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Forms
   const [addForm, setAddForm] = useState({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1 });
@@ -150,6 +154,54 @@ export default function StudentsPage() {
       console.error("Error updating student:", error);
     }
   };
+  
+  const handleDeleteStudent = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
+    try {
+      const batch = writeBatch(db);
+      
+      // 1. Delete submissions
+      const subSnap = await getDocs(query(collection(db, "submissions"), where("userId", "==", deleteId)));
+      subSnap.forEach(d => batch.delete(d.ref));
+      
+      // 2. Delete notifications
+      const notifSnap = await getDocs(query(collection(db, "notifications"), where("userId", "==", deleteId)));
+      notifSnap.forEach(d => batch.delete(d.ref));
+      
+      // 3. Delete payment logs
+      const paySnap = await getDocs(query(collection(db, "payment_logs"), where("studentId", "==", deleteId)));
+      paySnap.forEach(d => batch.delete(d.ref));
+      
+      // 4. Remove from groups
+      const groupsSnap = await getDocs(query(collection(db, "groups"), where("studentIds", "array-contains", deleteId)));
+      groupsSnap.forEach(d => {
+        batch.update(d.ref, {
+          studentIds: arrayRemove(deleteId)
+        });
+      });
+      
+      // 5. Remove from sessions
+      const sessionsSnap = await getDocs(query(collection(db, "sessions"), where("studentIds", "array-contains", deleteId)));
+      sessionsSnap.forEach(d => {
+        batch.update(d.ref, {
+          studentIds: arrayRemove(deleteId),
+          [`payments.${deleteId}`]: deleteField()
+        });
+      });
+      
+      // 6. Delete user doc
+      batch.delete(doc(db, "users", deleteId));
+      
+      await batch.commit();
+      setDeleteId(null);
+    } catch (error) {
+      console.error("Error deleting student:", error);
+      alert("Failed to delete student and associated data.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const filteredStudents = students.filter(s => 
     s.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -245,11 +297,23 @@ export default function StudentsPage() {
                   <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400">
                     <UserIcon className="w-5 h-5" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-lg text-white">{student.name}</h3>
-                    <p className="text-xs text-muted-foreground">{student.email}</p>
+                    <div>
+                      <h3 className="font-bold text-lg text-white">{student.name}</h3>
+                      <p className="text-xs text-muted-foreground">{student.email}</p>
+                    </div>
                   </div>
-                </div>
+                  
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="absolute top-2 right-2 h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all z-20"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteId(student.id);
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
 
                 <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/10 text-sm relative z-10">
                   <div className="flex items-center gap-2 text-muted-foreground">
@@ -338,6 +402,15 @@ export default function StudentsPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      <DeleteDialog 
+        isOpen={!!deleteId} 
+        onOpenChange={(open) => !open && setDeleteId(null)} 
+        onConfirm={handleDeleteStudent}
+        loading={isDeleting}
+        title="Delete Student Account"
+        description="This will permanently delete this student along with all their submissions, payment history, and group memberships. This action cannot be undone."
+      />
     </div>
   );
 }

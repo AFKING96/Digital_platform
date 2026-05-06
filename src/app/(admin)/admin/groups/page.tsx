@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, onSnapshot, doc, deleteDoc, where, orderBy, updateDoc, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { writeBatch, getDocs, collection, query, where, doc, deleteDoc, onSnapshot, orderBy, updateDoc, addDoc } from "firebase/firestore";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,8 @@ export default function GroupsPage() {
   
   const [form, setForm] = useState({ name: "", studentIds: [] as string[] });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     // Fetch Groups
@@ -79,12 +82,30 @@ export default function GroupsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this group?")) return;
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "groups", id));
+      const batch = writeBatch(db);
+      
+      // 1. Remove references from sessions
+      const sessionsSnap = await getDocs(query(collection(db, "sessions"), where("targetId", "==", deleteId)));
+      sessionsSnap.forEach(d => {
+        // If it's a group session, we might want to delete it or just clear the target
+        // Based on "remove group references", I'll delete the session to prevent orphans
+        batch.delete(d.ref);
+      });
+      
+      // 2. Delete the group itself
+      batch.delete(doc(db, "groups", deleteId));
+      
+      await batch.commit();
+      setDeleteId(null);
     } catch (error) {
       console.error("Error deleting group:", error);
+      alert("Failed to delete group.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -263,7 +284,7 @@ export default function GroupsPage() {
                       }}>
                         <Info className="w-4.5 h-4.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-9 w-9 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-full" onClick={() => handleDelete(group.id)}>
+                      <Button variant="ghost" size="icon" className="h-9 w-9 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-full" onClick={() => setDeleteId(group.id)}>
                         <Trash2 className="w-4.5 h-4.5" />
                       </Button>
                     </div>
@@ -294,6 +315,15 @@ export default function GroupsPage() {
           </AnimatePresence>
         </div>
       )}
+
+      <DeleteDialog 
+        isOpen={!!deleteId} 
+        onOpenChange={(open) => !open && setDeleteId(null)} 
+        onConfirm={handleDelete}
+        loading={isDeleting}
+        title="Delete Group"
+        description="This will permanently delete this group and any associated session schedules. Student accounts will not be deleted. This action cannot be undone."
+      />
     </div>
   );
 }

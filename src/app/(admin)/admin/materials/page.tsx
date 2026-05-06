@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -26,6 +27,8 @@ export default function MaterialsPage() {
   const [form, setForm] = useState({ title: "", lessonId: 1 });
   const [uploading, setUploading] = useState(false);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "materials"));
@@ -90,9 +93,17 @@ export default function MaterialsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Remove this material? Note: This only removes the database entry, not the local file.")) {
-      await deleteDoc(doc(db, "materials", id));
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
+    try {
+      await deleteDoc(doc(db, "materials", deleteId));
+      setDeleteId(null);
+    } catch (error) {
+      console.error("Error deleting material:", error);
+      alert("Failed to delete material.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -172,7 +183,7 @@ export default function MaterialsPage() {
                 </a>
               </div>
             </div>
-            <Button size="icon" variant="ghost" className="relative z-10 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" onClick={() => handleDelete(mat.id)}>
+            <Button size="icon" variant="ghost" className="relative z-10 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" onClick={() => setDeleteId(mat.id)}>
               <Trash2 className="w-4 h-4" />
             </Button>
           </HighlightCard>
@@ -184,6 +195,15 @@ export default function MaterialsPage() {
           </div>
         )}
       </div>
+
+      <DeleteDialog 
+        isOpen={!!deleteId} 
+        onOpenChange={(open) => !open && setDeleteId(null)} 
+        onConfirm={handleDelete}
+        loading={isDeleting}
+        title="Delete Material"
+        description="This will permanently remove this resource from the module. Note: This only removes the database entry, the actual file will remain on the server."
+      />
     </div>
   );
 }

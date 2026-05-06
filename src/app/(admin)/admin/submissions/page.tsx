@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, onSnapshot, doc, updateDoc, getDoc, getDocs, orderBy, where } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, updateDoc, getDoc, getDocs, orderBy, where, deleteDoc } from "firebase/firestore";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
+import { Trash2 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -30,6 +32,8 @@ export default function SubmissionsPage() {
   const [gradeForm, setGradeForm] = useState({ score: 0, feedback: "" });
   const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     // 1. Fetch lesson mapping first
@@ -133,6 +137,20 @@ export default function SubmissionsPage() {
     }
   };
 
+  const handleDeleteSubmission = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
+    try {
+      await deleteDoc(doc(db, "submissions", deleteId));
+      setDeleteId(null);
+    } catch (error) {
+      console.error("Error deleting submission:", error);
+      alert("Failed to delete submission.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const filtered = submissions.filter(s => filter === "all" ? true : s.status === filter);
 
   return (
@@ -161,7 +179,12 @@ export default function SubmissionsPage() {
                 {sub.status === "pending" ? (
                   <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20"><Clock className="w-3 h-3 mr-1"/> Pending</Badge>
                 ) : (
-                  <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Reviewed ({sub.score}%)</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Reviewed ({sub.score}%)</Badge>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => setDeleteId(sub.id)}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 )}
               </div>
 
@@ -222,6 +245,15 @@ export default function SubmissionsPage() {
           <div className="text-center py-12 text-muted-foreground">No submissions found.</div>
         )}
       </div>
+
+      <DeleteDialog 
+        isOpen={!!deleteId} 
+        onOpenChange={(open) => !open && setDeleteId(null)} 
+        onConfirm={handleDeleteSubmission}
+        loading={isDeleting}
+        title="Delete Submission"
+        description="This will permanently delete this student submission. This action cannot be undone."
+      />
     </div>
   );
 }

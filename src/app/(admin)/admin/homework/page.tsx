@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, deleteDoc, doc, where } from "firebase/firestore";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -23,8 +24,10 @@ export default function AdminHomeworkPage() {
   const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState({ lessonId: "", title: "", deadline: "" });
-  const [lessons, setLessons] = useState<{id: number, title: string}[]>([]);
+  const [lessons, setLessons] = useState<{id: number, title: string, order: number}[]>([]);
   const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchHomeworks();
@@ -90,13 +93,18 @@ export default function AdminHomeworkPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure?")) return;
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "homework", id));
+      await deleteDoc(doc(db, "homework", deleteId));
       fetchHomeworks();
+      setDeleteId(null);
     } catch (error) {
       console.error("Error deleting homework:", error);
+      alert("Failed to delete homework.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -197,7 +205,7 @@ export default function AdminHomeworkPage() {
                 </div>
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => handleDelete(hw.id)} className="text-red-400 hover:text-red-300 hover:bg-red-500/10">
+            <Button variant="ghost" size="sm" onClick={() => setDeleteId(hw.id)} className="text-red-400 hover:text-red-300 hover:bg-red-500/10">
               <Trash2 className="w-4 h-4" />
             </Button>
           </Card>
@@ -206,6 +214,15 @@ export default function AdminHomeworkPage() {
           <div className="text-center py-10 text-muted-foreground">No homework assigned yet.</div>
         )}
       </div>
+
+      <DeleteDialog 
+        isOpen={!!deleteId} 
+        onOpenChange={(open) => !open && setDeleteId(null)} 
+        onConfirm={handleDelete}
+        loading={isDeleting}
+        title="Delete Homework"
+        description="This will permanently delete this homework assignment. Students will no longer see it in their dashboard. This action cannot be undone."
+      />
     </div>
   );
 }

@@ -10,7 +10,8 @@ import { FileCard } from "@/components/ui/file-card-collections";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Edit2, Save, Trash2, X, FileUp, File as FileIcon, Search, GraduationCap } from "lucide-react";
+import { Plus, Edit2, Save, Trash2, X, FileUp, File as FileIcon, Search, GraduationCap, AlertTriangle } from "lucide-react";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { type FormatFileProps } from "@/components/ui/file-card-collections";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -32,6 +33,8 @@ export default function LessonsPage() {
   const [form, setForm] = useState({ id: 1, title: "", summary: "", file: "" });
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "lessons"), orderBy("order", "asc"));
@@ -129,15 +132,38 @@ export default function LessonsPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm("Are you sure you want to delete this lesson?")) {
-      try {
-        await deleteDoc(doc(db, "lessons", id.toString()));
-        // Reorder remaining lessons
-        await reorderLessons(lessons.filter(l => l.id !== id));
-      } catch (error) {
-        console.error("Error deleting/reordering lessons:", error);
-      }
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setIsDeleting(true);
+    try {
+      // 1. Delete associated data (quizzes, materials, homework)
+      const batch = writeBatch(db);
+      
+      // Quiz (ID is lessonId)
+      batch.delete(doc(db, "quizzes", deleteId.toString()));
+      
+      // Materials
+      const materialsSnap = await getDocs(query(collection(db, "materials"), where("lessonId", "==", deleteId)));
+      materialsSnap.forEach(d => batch.delete(d.ref));
+      
+      // Homework
+      const homeworkSnap = await getDocs(query(collection(db, "homework"), where("lessonId", "==", deleteId)));
+      homeworkSnap.forEach(d => batch.delete(d.ref));
+      
+      // 2. Delete the lesson itself
+      batch.delete(doc(db, "lessons", deleteId.toString()));
+      
+      await batch.commit();
+
+      // 3. Reorder remaining lessons
+      await reorderLessons(lessons.filter(l => l.id !== deleteId));
+      
+      setDeleteId(null);
+    } catch (error) {
+      console.error("Error deleting/reordering lessons:", error);
+      alert("Failed to delete lesson and associated data.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -264,7 +290,7 @@ export default function LessonsPage() {
               <Button size="sm" variant="outline" className="border-white/10 hover:bg-white/5" onClick={() => startEdit(lesson)}>
                 <Edit2 className="w-4 h-4 mr-2" /> Edit
               </Button>
-              <Button size="sm" variant="outline" className="border-destructive/20 text-destructive hover:bg-destructive/10" onClick={() => handleDelete(lesson.id)}>
+              <Button size="sm" variant="outline" className="border-destructive/20 text-destructive hover:bg-destructive/10" onClick={() => setDeleteId(lesson.id)}>
                 <Trash2 className="w-4 h-4 mr-2" /> Delete
               </Button>
             </div>
@@ -284,6 +310,15 @@ export default function LessonsPage() {
           />
         )}
       </div>
+
+      <DeleteDialog 
+        isOpen={!!deleteId} 
+        onOpenChange={(open) => !open && setDeleteId(null)} 
+        onConfirm={handleDelete}
+        loading={isDeleting}
+        title="Delete Module"
+        description="This will permanently delete this module along with all its attached quizzes, materials, and homework assignments. This action cannot be undone."
+      />
     </div>
   );
 }

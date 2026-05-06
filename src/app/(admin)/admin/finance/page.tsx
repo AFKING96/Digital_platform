@@ -8,8 +8,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Save, Edit2, TrendingUp, AlertCircle } from "lucide-react";
+import { DollarSign, Save, Edit2, TrendingUp, AlertCircle, Trash2, Clock, Calendar } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
+import { deleteDoc, orderBy as fireOrderBy, serverTimestamp, getDocs } from "firebase/firestore";
 
 interface StudentFinance {
   id: string;
@@ -22,6 +24,10 @@ export default function FinancePage() {
   const [students, setStudents] = useState<StudentFinance[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ paid: 0, remaining: 0 });
+  const [paymentLogs, setPaymentLogs] = useState<any[]>([]);
+  const [deleteLogId, setDeleteLogId] = useState<string | null>(null);
+  const [isDeletingLog, setIsDeletingLog] = useState(false);
+  const [loadingLogs, setLoadingLogs] = useState(true);
 
   useEffect(() => {
     const q = query(collection(db, "users"), where("role", "==", "student"));
@@ -37,8 +43,32 @@ export default function FinancePage() {
       });
       setStudents(data);
     });
-    return () => unsubscribe();
+
+    const qLogs = query(collection(db, "payment_logs"), fireOrderBy("date", "desc"));
+    const unsubscribeLogs = onSnapshot(qLogs, (snapshot) => {
+      const logs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setPaymentLogs(logs);
+      setLoadingLogs(false);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeLogs();
+    };
   }, []);
+
+  const handleDeleteLog = async () => {
+    if (!deleteLogId) return;
+    setIsDeletingLog(true);
+    try {
+      await deleteDoc(doc(db, "payment_logs", deleteLogId));
+      setDeleteLogId(null);
+    } catch (error) {
+      console.error("Error deleting log:", error);
+    } finally {
+      setIsDeletingLog(false);
+    }
+  };
 
   const handleEdit = (student: StudentFinance) => {
     setEditingId(student.id);
@@ -214,6 +244,61 @@ export default function FinancePage() {
           </div>
         </Card>
       </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+        <Card className="glass-card overflow-hidden border-white/5">
+          <div className="bg-white/5 px-6 py-4 border-b border-white/5 flex justify-between items-center">
+            <h2 className="text-lg font-bold">Recent Payment History</h2>
+            <Clock className="w-4 h-4 text-muted-foreground" />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-black/20 text-muted-foreground uppercase tracking-wider text-xs">
+                <tr>
+                  <th className="px-6 py-4 font-medium">Student</th>
+                  <th className="px-6 py-4 font-medium">Session</th>
+                  <th className="px-6 py-4 font-medium">Date</th>
+                  <th className="px-6 py-4 font-medium">Amount</th>
+                  <th className="px-6 py-4 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {paymentLogs.map(log => (
+                  <tr key={log.id} className="hover:bg-white/5 transition-colors group">
+                    <td className="px-6 py-4 font-medium text-white">{log.studentName}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{log.sessionTitle || "Manual Entry"}</td>
+                    <td className="px-6 py-4 text-muted-foreground">
+                      {log.date?.toDate ? log.date.toDate().toLocaleDateString() : "---"}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-emerald-400 font-bold">+${log.amount}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Button size="icon" variant="ghost" onClick={() => setDeleteLogId(log.id)} className="text-red-400 hover:text-red-300 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {paymentLogs.length === 0 && !loadingLogs && (
+                  <tr>
+                    <td colSpan={5} className="p-12 text-center text-muted-foreground">No payment logs recorded yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </motion.div>
+
+      <DeleteDialog 
+        isOpen={!!deleteLogId} 
+        onOpenChange={(open) => !open && setDeleteLogId(null)} 
+        onConfirm={handleDeleteLog}
+        loading={isDeletingLog}
+        title="Delete Payment Log"
+        description="This will permanently delete this payment record from history. It will NOT update the student's total balance automatically. This action cannot be undone."
+      />
     </div>
   );
 }

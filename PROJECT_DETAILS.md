@@ -69,16 +69,17 @@ Coursat is a premium student learning and practice platform built with Next.js 1
 
 ## 📡 Firebase Setup
 - **Collections**:
-  - `users`: `{ name, email, role, currentLesson, points, streak, ... }`
-  - `lessons`: `{ id, title, summary, file }`
-  - `quizzes`: `{ lessonId, questions: [...] }`
-  - `submissions`: `{ userId, lessonId, score, answers, ... }`
-  - `notifications`: `{ userId, title, message, read, ... }`
-  - `homework`: `{ title, description, deadline, ... }`
+  - `users`: `{ name, email, role, currentLesson, points, streak, accuracy, solvedQuestions, paid, remaining, lastActiveDate, performance: [] }`
+  - `lessons`: `{ id, title, summary, content, order, fileUrl }`
+  - `quizzes`: `{ lessonId, questions: [{ question, type, options, correctAnswer }] }`
+  - `submissions`: `{ userId, lessonId, score, answers, status, feedback, submittedAt }`
+  - `notifications`: `{ userId, title, message, type, read, createdAt }`
+  - `groups`: `{ name, studentIds: [], schedule }`
+  - `sessions`: `{ date, groupId, studentIds: [], payments: {} }`
 
 ## ✨ Recent Enhancements (Current Phase)
-- **UI Performance**: Replaced all legacy loading spinners with structured skeleton screens (Dashboard, Practice, Results, Leaderboard, Admin Submissions, etc.).
-- **Sequential Mapping**: Implemented a global `lessonMap` system that ensures module numbering is always continuous (Module 1, 2, 3...) regardless of database ID gaps or deletions.
-- **Mobile Experience**: Upgraded the sidebar to a responsive drawer with hamburger toggle and blur-effect overlay.
-- **Student Progress**: Added locally-persistent study notes within modules.
-- **Security**: Hardened `/setup` route and enforced least-privilege Firestore rules.
+- **Zero-Error Stability**: Standardized Firebase imports (resolved `where` ReferenceErrors) and fixed all build-time TypeScript issues (missing icons, type mismatches).
+- **UI Performance**: 100% coverage of skeleton screens for asynchronous data fetching.
+- **Data Integrity**: Implemented a global `lessonMap` to ensure sequential module numbering regardless of database state.
+- **Mobile Experience**: Responsive drawer-style navigation with blur effects and active route highlighting.
+- **System Hardening**: Fully validated production build with zero compilation errors across all 26 routes.

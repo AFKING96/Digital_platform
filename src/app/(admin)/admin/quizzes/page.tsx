@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Save, Trash2, CheckSquare, Link as LinkIcon, Type, List, CheckCircle2, Wand2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
+import { deleteDoc, writeBatch } from "firebase/firestore";
 
 interface Question {
   id: number;
@@ -31,6 +33,10 @@ export default function QuizzesPage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [formLink, setFormLink] = useState("");
   const [smartText, setSmartText] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeletingQuiz, setIsDeletingQuiz] = useState(false);
+  const [quizToDelete, setQuizToDelete] = useState<string | null>(null);
 
   const handleSmartParse = () => {
     if (!smartText.trim()) return;
@@ -155,6 +161,22 @@ export default function QuizzesPage() {
     }
   };
 
+  const handleDeleteQuiz = async () => {
+    if (!quizToDelete) return;
+    setIsDeletingQuiz(true);
+    try {
+      await deleteDoc(doc(db, "quizzes", quizToDelete));
+      setQuestions([]);
+      setFormLink("");
+      setQuizToDelete(null);
+    } catch (error) {
+      console.error("Error deleting quiz:", error);
+      alert("Failed to delete quiz.");
+    } finally {
+      setIsDeletingQuiz(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-5xl pb-10">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -162,9 +184,16 @@ export default function QuizzesPage() {
           <h1 className="text-3xl font-bold tracking-tight">Quiz Builder</h1>
           <p className="text-muted-foreground">Create dynamic assessments or link external forms.</p>
         </div>
-        <Button onClick={handleSave} className="bg-primary hover:bg-primary/90 btn-glow transition-all hover:scale-105" disabled={!selectedLesson}>
-          <Save className="w-4 h-4 mr-2" /> Save Quiz
-        </Button>
+        <div className="flex gap-2">
+          {selectedLesson && (questions.length > 0 || formLink) && (
+            <Button variant="ghost" onClick={() => setQuizToDelete(selectedLesson)} className="text-red-400 hover:text-red-300 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4 mr-2" /> Delete Quiz
+            </Button>
+          )}
+          <Button onClick={handleSave} className="bg-primary hover:bg-primary/90 btn-glow transition-all hover:scale-105" disabled={!selectedLesson}>
+            <Save className="w-4 h-4 mr-2" /> Save Quiz
+          </Button>
+        </div>
       </div>
 
       <Card className="glass-card p-6 border-primary/20 bg-[#040810]/80">
@@ -325,6 +354,15 @@ export default function QuizzesPage() {
           </div>
         </div>
       )}
+
+      <DeleteDialog 
+        isOpen={!!quizToDelete} 
+        onOpenChange={(open) => !open && setQuizToDelete(null)} 
+        onConfirm={handleDeleteQuiz}
+        loading={isDeletingQuiz}
+        title="Delete Entire Quiz"
+        description="This will permanently remove the quiz and all its questions from this module. This action cannot be undone."
+      />
     </div>
   );
 }

@@ -26,7 +26,8 @@ import {
   ClipboardList,
   Trophy,
   Menu,
-  X
+  X,
+  Bell
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import Link from "next/link";
@@ -106,6 +107,7 @@ export function SessionNavBar() {
     { href: "/admin/materials", label: "Materials", icon: Layout },
     { href: "/admin/finance", label: "Finance", icon: DollarSign },
     { href: "/admin/submissions", label: "Submissions", icon: MessagesSquare },
+    { href: "/admin/notifications", label: "Notifications", icon: Bell },
   ];
 
   const studentLinks = [
