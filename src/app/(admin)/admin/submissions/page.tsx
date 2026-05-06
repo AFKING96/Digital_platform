@@ -36,35 +36,36 @@ export default function SubmissionsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    // 1. Fetch lesson mapping first
-    const fetchLessons = async () => {
-      const q = query(collection(db, "lessons"), orderBy("order", "asc"));
-      const snap = await getDocs(q);
+    // 1. Fetch lesson mapping and student names first
+    const fetchData = async () => {
+      const lessonQ = query(collection(db, "lessons"), orderBy("order", "asc"));
+      const lessonSnap = await getDocs(lessonQ);
       const mapping: Record<number, number> = {};
-      snap.docs.forEach((d) => {
-        const data = d.data();
-        mapping[data.id] = data.order;
+      lessonSnap.docs.forEach((d) => {
+        mapping[d.data().id] = d.data().order;
       });
       setLessonMap(mapping);
+
+      const studentQ = query(collection(db, "users"), where("role", "==", "student"));
+      const studentSnap = await getDocs(studentQ);
+      const names: Record<string, string> = {};
+      studentSnap.docs.forEach((d) => {
+        names[d.id] = d.data().name;
+      });
+      setStudentNames(names);
     };
-    fetchLessons();
+    fetchData();
 
     // 2. Real-time submissions
     const q = query(collection(db, "submissions"));
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const subs: Submission[] = [];
       
-      for (const document of snapshot.docs) {
+      snapshot.forEach((document) => {
         const data = document.data() as Submission;
-        // Fetch user name
-        let userName = "Unknown Student";
-        try {
-          const userSnap = await getDoc(doc(db, "users", data.userId));
-          if (userSnap.exists()) userName = userSnap.data().name;
-        } catch {}
-        
-        subs.push({ ...data, id: document.id, userName });
-      }
+        subs.push({ ...data, id: document.id });
+      });
+
       // Sort by status pending first
       subs.sort((a, b) => {
         if (a.status === 'pending' && b.status !== 'pending') return -1;
@@ -120,13 +121,17 @@ export default function SubmissionsPage() {
           const ud = userSnap.data();
           const oldAccuracy = ud.accuracy || 0;
           const oldSolved = ud.solvedQuestions || 0;
+          const subQuestions = sub.totalQuestions || 1; // Fallback to 1
           
-          const newAccuracy = oldAccuracy === 0 ? numericScore : Math.round((oldAccuracy + numericScore) / 2);
+          const totalCorrectSoFar = (oldAccuracy * oldSolved) / 100;
+          const newCorrectFromSub = (numericScore * subQuestions) / 100;
+          
+          const newSolved = oldSolved + subQuestions;
+          const newAccuracy = Math.round(((totalCorrectSoFar + newCorrectFromSub) / newSolved) * 100);
           
           await updateDoc(userRef, {
             accuracy: newAccuracy,
-            // Assume 1 submission = 1 overall quiz completion, you can add to solved questions too
-            solvedQuestions: oldSolved + 1
+            solvedQuestions: newSolved
           });
         }
       }
@@ -173,7 +178,7 @@ export default function SubmissionsPage() {
             <Card className={`glass-card p-6 border-l-4 ${sub.status === "pending" ? "border-l-yellow-500" : "border-l-green-500"}`}>
               <div className="flex justify-between items-start mb-6 border-b border-white/5 pb-4">
                 <div>
-                  <h3 className="font-bold text-xl text-white">{sub.userName}</h3>
+                  <h3 className="font-bold text-xl text-white">{studentNames[sub.userId] || "Unknown Student"}</h3>
                   <p className="text-sm text-muted-foreground">Module {lessonMap[Number(sub.lessonId)] || sub.lessonId}</p>
                 </div>
                 {sub.status === "pending" ? (

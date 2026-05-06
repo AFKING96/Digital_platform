@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, getDoc, collection, getDocs, query, where, orderBy } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -35,42 +35,38 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        if (!auth.currentUser) {
-          setLoading(false);
-          return;
-        }
-        // Fetch User
-        const userDocRef = doc(db, "users", auth.currentUser.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        
-        let uData: UserData | null = null;
-        if (userDocSnap.exists()) {
-          uData = userDocSnap.data() as UserData;
-          setUserData(uData);
-        }
+    if (!auth.currentUser) {
+      setLoading(false);
+      return;
+    }
 
-        // Fetch All Lessons
-        const lQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
-        const lSnap = await getDocs(lQuery);
-        const lData: Lesson[] = [];
-        lSnap.forEach(doc => lData.push(doc.data() as Lesson));
-        setLessons(lData);
-
-        // Fetch Submissions count
-        const subsQuery = query(collection(db, "submissions"), where("userId", "==", auth.currentUser.uid));
-        const subsSnap = await getDocs(subsQuery);
-        setSubmissionsCount(subsSnap.size);
-
-      } catch (error) {
-        console.error("Error fetching dashboard data", error);
-      } finally {
-        setLoading(false);
+    // 1. Real-time User Data
+    const userUnsubscribe = onSnapshot(doc(db, "users", auth.currentUser.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        setUserData(docSnap.data() as UserData);
       }
-    };
+    });
 
-    fetchData();
+    // 2. Real-time Lessons
+    const lessonsQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
+    const lessonsUnsubscribe = onSnapshot(lessonsQuery, (snapshot) => {
+      const lData: Lesson[] = [];
+      snapshot.forEach(doc => lData.push(doc.data() as Lesson));
+      setLessons(lData);
+      setLoading(false);
+    });
+
+    // 3. Real-time Submissions count
+    const subsQuery = query(collection(db, "submissions"), where("userId", "==", auth.currentUser.uid));
+    const subsUnsubscribe = onSnapshot(subsQuery, (snapshot) => {
+      setSubmissionsCount(snapshot.size);
+    });
+
+    return () => {
+      userUnsubscribe();
+      lessonsUnsubscribe();
+      subsUnsubscribe();
+    };
   }, []);
 
   if (loading) {

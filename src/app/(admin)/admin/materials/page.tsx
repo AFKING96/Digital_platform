@@ -97,6 +97,11 @@ export default function MaterialsPage() {
     if (!deleteId) return;
     setIsDeleting(true);
     try {
+      const mat = materials.find(m => m.id === deleteId);
+      if (mat?.path) {
+        const fileName = mat.path.split('/').pop();
+        await fetch(`/api/upload?file=${fileName}`, { method: "DELETE" });
+      }
       await deleteDoc(doc(db, "materials", deleteId));
       setDeleteId(null);
     } catch (error) {

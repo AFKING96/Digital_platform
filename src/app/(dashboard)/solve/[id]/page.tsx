@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, getDoc, addDoc, collection, updateDoc, serverTimestamp, getDocs, orderBy, query, where } from "firebase/firestore";
+import { doc, getDoc, addDoc, collection, updateDoc, serverTimestamp, getDocs, orderBy, query, where, onSnapshot } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -44,31 +44,33 @@ export default function SolvePage() {
   const [displayNumber, setDisplayNumber] = useState<number | null>(null);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // 1. Fetch current quiz
-        const quizRef = doc(db, "quizzes", params.id as string);
-        const snap = await getDoc(quizRef);
-        if (snap.exists()) {
-          setQuiz(snap.data() as Quiz);
-        }
+    if (!params.id) return;
 
-        // 2. Fetch lesson to get order
-        const lessonsRef = collection(db, "lessons");
-        const q = query(lessonsRef, where("id", "==", Number(params.id)));
-        const lessonsSnap = await getDocs(q);
-        if (!lessonsSnap.empty) {
-          setDisplayNumber((lessonsSnap.docs[0].data() as any).order);
-        }
+    // 1. Real-time Quiz data
+    const quizRef = doc(db, "quizzes", params.id as string);
+    const unsubscribeQuiz = onSnapshot(quizRef, (snap) => {
+      if (snap.exists()) {
+        setQuiz(snap.data() as Quiz);
+      } else {
+        setQuiz(null);
+      }
+      setLoading(false);
+    }, (error) => {
+      console.warn("Error fetching quiz data:", error);
+      setLoading(false);
+    });
 
-      } catch (error) {
-        console.warn("Error fetching quiz data:", error);
-      } finally {
-        setLoading(false);
+    // 2. Fetch lesson order (usually doesn't change during session, but good to have)
+    const fetchLesson = async () => {
+      const q = query(collection(db, "lessons"), where("id", "==", Number(params.id)));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        setDisplayNumber((snap.docs[0].data() as any).order);
       }
     };
+    fetchLesson();
 
-    if (params.id) { fetchData(); }
+    return () => unsubscribeQuiz();
   }, [params.id]);
 
   const handleNext = () => {
@@ -122,9 +124,10 @@ export default function SolvePage() {
         score: hasEssay ? null : accuracy,
         status: finalStatus,
         feedback: "",
-        submittedAt: new Date().toISOString(),
+        submittedAt: serverTimestamp(),
         correct: score,
-        wrong: totalGradable - score
+        wrong: totalGradable - score,
+        totalQuestions: totalGradable
       });
 
       // 2. SMART TRACKING & GAMIFICATION
@@ -175,7 +178,7 @@ export default function SolvePage() {
           correct: score,
           wrong: totalGradable - score,
           accuracy: accuracy,
-          timestamp: new Date().toISOString()
+          timestamp: serverTimestamp()
         };
 
         if (existingPerfIdx > -1) {
@@ -196,7 +199,7 @@ export default function SolvePage() {
           accuracy: newAccuracyValue,
           points: newPoints,
           streak: currentStreak,
-          lastActiveDate: new Date().toISOString(),
+          lastActiveDate: serverTimestamp(),
           completedLessons: completedLessons,
           performance: performance,
           currentLesson: Math.max(ud.currentLesson || 1, quiz.lessonId + 1)

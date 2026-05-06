@@ -2,7 +2,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyA-Kp-ba58TYuyIyBybwP6DOc-SM7l4Bd4",
   authDomain: "coursat-web99.firebaseapp.com",
   projectId: "coursat-web99",

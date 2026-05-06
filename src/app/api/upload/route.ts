@@ -40,3 +40,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: "Upload failed" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const fileName = searchParams.get("file");
+
+    if (!fileName) {
+      return NextResponse.json({ success: false, error: "No file name provided" }, { status: 400 });
+    }
+
+    const filePath = path.join(process.cwd(), "public", "materials", fileName);
+    
+    // Check if file exists before deleting
+    const { unlink } = await import("fs/promises");
+    await unlink(filePath);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Delete error:", error);
+    return NextResponse.json({ success: false, error: "Delete failed" }, { status: 500 });
+  }
+}

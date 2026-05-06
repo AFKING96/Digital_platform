@@ -153,6 +153,10 @@ export default function LessonsPage() {
       // 2. Delete the lesson itself
       batch.delete(doc(db, "lessons", deleteId.toString()));
       
+      // 3. Delete Submissions
+      const subSnap = await getDocs(query(collection(db, "submissions"), where("lessonId", "==", deleteId.toString())));
+      subSnap.forEach(d => batch.delete(d.ref));
+      
       await batch.commit();
 
       // 3. Reorder remaining lessons

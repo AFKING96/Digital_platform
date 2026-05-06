@@ -94,19 +94,18 @@ export default function QuizzesPage() {
 
   useEffect(() => {
     if (!selectedLesson) return;
-    const loadQuiz = async () => {
-      const q = query(collection(db, "quizzes"));
-      const snapshot = await getDocs(q);
-      const quiz = snapshot.docs.find(d => d.data().lessonId === selectedLesson);
-      if (quiz) {
-        setQuestions(quiz.data().questions || []);
-        setFormLink(quiz.data().formLink || "");
+    const q = query(collection(db, "quizzes"), where("lessonId", "==", selectedLesson));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const quiz = snapshot.docs[0].data();
+        setQuestions(quiz.questions || []);
+        setFormLink(quiz.formLink || "");
       } else {
         setQuestions([]);
         setFormLink("");
       }
-    };
-    loadQuiz();
+    });
+    return () => unsubscribe();
   }, [selectedLesson]);
 
   const addQuestion = (type: "mcq" | "true_false" | "essay") => {

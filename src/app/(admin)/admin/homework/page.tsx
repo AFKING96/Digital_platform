@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, deleteDoc, doc, where } from "firebase/firestore";
+import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, deleteDoc, doc, where, onSnapshot, writeBatch } from "firebase/firestore";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
@@ -30,36 +30,30 @@ export default function AdminHomeworkPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    fetchHomeworks();
-    fetchLessonMap();
-  }, []);
-
-  const fetchLessonMap = async () => {
-    const q = query(collection(db, "lessons"), orderBy("order", "asc"));
-    const snap = await getDocs(q);
-    const mapping: Record<number, number> = {};
-    const lList: {id: number, title: string, order: number}[] = [];
-    snap.docs.forEach((d) => {
-      const data = d.data();
-      mapping[data.id] = data.order;
-      lList.push({ id: data.id, title: data.title, order: data.order });
-    });
-    setLessonMap(mapping);
-    setLessons(lList);
-  };
-
-  const fetchHomeworks = async () => {
-    try {
-      const q = query(collection(db, "homework"), orderBy("deadline", "asc"));
-      const snap = await getDocs(q);
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Homework));
+    const q = query(collection(db, "homework"), orderBy("deadline", "asc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Homework));
       setHomeworks(data);
-    } catch (error) {
-      console.error("Error fetching homework:", error);
-    } finally {
       setLoading(false);
-    }
-  };
+    });
+
+    const fetchLessonMap = async () => {
+      const qL = query(collection(db, "lessons"), orderBy("order", "asc"));
+      const snap = await getDocs(qL);
+      const mapping: Record<number, number> = {};
+      const lList: {id: number, title: string, order: number}[] = [];
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        mapping[data.id] = data.order;
+        lList.push({ id: data.id, title: data.title, order: data.order });
+      });
+      setLessonMap(mapping);
+      setLessons(lList);
+    };
+    fetchLessonMap();
+
+    return () => unsubscribe();
+  }, []);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +65,8 @@ export default function AdminHomeworkPage() {
         createdAt: serverTimestamp()
       };
       
-      await addDoc(collection(db, "homework"), hwData);
+      const hwRef = await addDoc(collection(db, "homework"), hwData);
+      const homeworkId = hwRef.id;
 
       // Create notifications for all students
       const usersSnap = await getDocs(query(collection(db, "users"), where("role", "==", "student")));
@@ -80,6 +75,7 @@ export default function AdminHomeworkPage() {
           userId: userDoc.id,
           message: `New Homework Assigned: ${form.title} (Module ${lessonMap[Number(form.lessonId)] || form.lessonId})`,
           type: "homework",
+          referenceId: homeworkId,
           read: false,
           createdAt: serverTimestamp()
         });
@@ -87,7 +83,6 @@ export default function AdminHomeworkPage() {
 
       setIsAddOpen(false);
       setForm({ lessonId: "", title: "", deadline: "" });
-      fetchHomeworks();
     } catch (error) {
       console.error("Error adding homework:", error);
     }
@@ -97,8 +92,16 @@ export default function AdminHomeworkPage() {
     if (!deleteId) return;
     setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "homework", deleteId));
-      fetchHomeworks();
+      const batch = writeBatch(db);
+      
+      // 1. Delete notifications
+      const notifSnap = await getDocs(query(collection(db, "notifications"), where("referenceId", "==", deleteId)));
+      notifSnap.forEach(d => batch.delete(d.ref));
+      
+      // 2. Delete homework
+      batch.delete(doc(db, "homework", deleteId));
+      
+      await batch.commit();
       setDeleteId(null);
     } catch (error) {
       console.error("Error deleting homework:", error);

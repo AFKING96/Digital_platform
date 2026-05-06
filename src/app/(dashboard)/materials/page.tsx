@@ -6,30 +6,47 @@ import { Button } from "@/components/ui/button";
 import { Download, Eye } from "lucide-react";
 import { FileCard, FormatFileProps } from "@/components/ui/file-card-collections";
 
-// In a real app, this might come from Firestore or an API
-// For now, based on requirements, we list static files from /public/materials
-const materials = [
-  { id: 1, title: "Accounting 101 - Lecture 17", filename: "ACC101-L17.pdf", size: "0.7 MB" },
-  { id: 2, title: "Principles of Accounting 2", filename: "Accounting2.pdf.pdf", size: "3.7 MB" },
-];
-
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Search, FileText, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
+import { db } from "@/lib/firebase";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+
+interface Material {
+  id: string;
+  title: string;
+  url: string;
+  type: string;
+  createdAt: any;
+  size?: string;
+}
 
 export default function MaterialsPage() {
+  const [materials, setMaterials] = useState<Material[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, "materials"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Material));
+      setMaterials(data);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const filteredMaterials = useMemo(() => {
     return materials.filter(m => 
-      m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.filename.toLowerCase().includes(searchQuery.toLowerCase())
+      m.title.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [searchQuery]);
+  }, [searchQuery, materials]);
 
-  const getFileExtension = (filename: string): FormatFileProps => {
-    const ext = filename.split('.').pop()?.toLowerCase();
+  const getFileExtension = (url: string): FormatFileProps => {
+    if (!url) return "txt";
+    const cleanUrl = url.split('?')[0];
+    const ext = cleanUrl.split('.').pop()?.toLowerCase();
     const validExtensions: FormatFileProps[] = [
       "doc", "pdf", "md", "mdx", "csv", "xls", "xlsx", "txt", "ppt", "pptx", 
       "zip", "rar", "tar", "gz", "code", "html", "js", "jsx", "tsx", "css", 
@@ -75,11 +92,11 @@ export default function MaterialsPage() {
             <Card className="glass-card flex flex-col h-full hover:border-primary/50 transition-all duration-300 p-6">
               <div className="flex items-start gap-4 mb-6">
                 <div className="flex-shrink-0 mr-2">
-                  <FileCard formatFile={getFileExtension(material.filename)} />
+                  <FileCard formatFile={getFileExtension(material.url)} />
                 </div>
                 <div className="flex flex-col pt-1">
                   <h3 className="font-semibold text-white leading-tight mb-1">{material.title}</h3>
-                  <p className="text-sm text-muted-foreground">{material.size} • {getFileExtension(material.filename).toUpperCase()}</p>
+                  <p className="text-sm text-muted-foreground">{material.size || "Unknown Size"} • {getFileExtension(material.url).toUpperCase()}</p>
                 </div>
               </div>
 
@@ -87,7 +104,7 @@ export default function MaterialsPage() {
                 <Button 
                   variant="outline" 
                   className="flex-1 bg-white/5 border-white/10 hover:bg-white/10 text-white flex items-center justify-center gap-2"
-                  onClick={() => window.open(`/materials/${material.filename}`, '_blank')}
+                  onClick={() => window.open(material.url, '_blank')}
                 >
                   <Eye className="w-4 h-4" />
                   View
@@ -96,8 +113,8 @@ export default function MaterialsPage() {
                   className="flex-1 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/20 flex items-center justify-center gap-2"
                   onClick={() => {
                     const link = document.createElement('a');
-                    link.href = `/materials/${material.filename}`;
-                    link.download = material.filename;
+                    link.href = material.url;
+                    link.download = material.title;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);

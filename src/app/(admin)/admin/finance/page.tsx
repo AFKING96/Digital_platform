@@ -1,7 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  doc, 
+  updateDoc,
+  deleteDoc, 
+  orderBy as fireOrderBy, 
+  serverTimestamp, 
+  getDocs,
+  writeBatch,
+  increment
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -11,7 +24,6 @@ import { Badge } from "@/components/ui/badge";
 import { DollarSign, Save, Edit2, TrendingUp, AlertCircle, Trash2, Clock, Calendar } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { deleteDoc, orderBy as fireOrderBy, serverTimestamp, getDocs } from "firebase/firestore";
 
 interface StudentFinance {
   id: string;
@@ -59,12 +71,28 @@ export default function FinancePage() {
 
   const handleDeleteLog = async () => {
     if (!deleteLogId) return;
+    const logToDelete = paymentLogs.find(l => l.id === deleteLogId);
+    if (!logToDelete) return;
+
     setIsDeletingLog(true);
     try {
-      await deleteDoc(doc(db, "payment_logs", deleteLogId));
+      const batch = writeBatch(db);
+      
+      // 1. Revert balance
+      const userRef = doc(db, "users", logToDelete.studentId);
+      batch.update(userRef, {
+        paid: increment(-logToDelete.amount),
+        remaining: increment(logToDelete.amount)
+      });
+
+      // 2. Delete log
+      batch.delete(doc(db, "payment_logs", deleteLogId));
+      
+      await batch.commit();
       setDeleteLogId(null);
     } catch (error) {
       console.error("Error deleting log:", error);
+      alert("Failed to delete log and revert balance.");
     } finally {
       setIsDeletingLog(false);
     }
@@ -297,7 +325,7 @@ export default function FinancePage() {
         onConfirm={handleDeleteLog}
         loading={isDeletingLog}
         title="Delete Payment Log"
-        description="This will permanently delete this payment record from history. It will NOT update the student's total balance automatically. This action cannot be undone."
+        description="This will permanently delete this payment record and revert the student's paid/remaining balance. This action cannot be undone."
       />
     </div>
   );

@@ -54,31 +54,51 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           if (userDocSnap.exists()) {
             const data = userDocSnap.data() as UserData;
             setUserData(data);
+            setLoading(false); // Render the app immediately
 
-            // 🎮 GAMIFICATION: Streak & LastActive Logic
-            const now = new Date();
-            const lastActive = data.lastActiveDate?.toDate?.() || new Date(0);
-            const isNewDay = now.toDateString() !== lastActive.toDateString();
+            // 🎮 GAMIFICATION: Streak & LastActive Logic (Run in background)
+            const updateGamification = async () => {
+              try {
+                const now = new Date();
+                let lastActive: Date;
+                if (data.lastActiveDate && typeof (data.lastActiveDate as any).toDate === 'function') {
+                  lastActive = (data.lastActiveDate as any).toDate();
+                } else if (typeof data.lastActiveDate === 'string') {
+                  lastActive = new Date(data.lastActiveDate);
+                } else {
+                  lastActive = new Date(0);
+                }
+                
+                const isNewDay = now.toDateString() !== lastActive.toDateString();
+                
+                if (isNewDay) {
+                   const newStreak = (data.streak || 0) + 1;
+                   await updateDoc(userDocRef, {
+                     streak: newStreak,
+                     lastActiveDate: serverTimestamp()
+                   });
+                } else {
+                   await updateDoc(userDocRef, {
+                     lastActiveDate: serverTimestamp()
+                   });
+                }
+              } catch (e) {
+                console.error("Background gamification update failed:", e);
+              }
+            };
             
-            if (isNewDay) {
-               const newStreak = (data.streak || 0) + 1;
-               await updateDoc(userDocRef, {
-                 streak: newStreak,
-                 lastActiveDate: serverTimestamp()
-               });
-            } else {
-               await updateDoc(userDocRef, {
-                 lastActiveDate: serverTimestamp()
-               });
-            }
+            updateGamification();
+          } else {
+            setLoading(false);
           }
         } catch (error) {
-          console.error("Error fetching/updating user data:", error);
+          console.error("Error fetching user data:", error);
+          setLoading(false);
         }
       } else {
         setUserData(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();

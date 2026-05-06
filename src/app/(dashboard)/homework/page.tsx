@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -24,30 +24,27 @@ export default function StudentHomeworkPage() {
   const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // 1. Fetch lesson mapping
-        const lQuery = query(collection(db, "lessons"), orderBy("id", "asc"));
-        const lSnap = await getDocs(lQuery);
-        const mapping: Record<number, number> = {};
-        lSnap.docs.forEach((d, idx) => {
-          mapping[d.data().id] = idx + 1;
-        });
-        setLessonMap(mapping);
+    // 1. Real-time Homework data
+    const homeworkQuery = query(collection(db, "homework"), orderBy("deadline", "asc"));
+    const unsubscribeHomework = onSnapshot(homeworkQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Homework));
+      setHomeworks(data);
+      setLoading(false);
+    });
 
-        // 2. Fetch homework
-        const q = query(collection(db, "homework"), orderBy("deadline", "asc"));
-        const snap = await getDocs(q);
-        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Homework));
-        setHomeworks(data);
-      } catch (error) {
-        console.error("Error fetching student homework:", error);
-      } finally {
-        setLoading(false);
-      }
+    // 2. Fetch lesson mapping
+    const fetchLessonMap = async () => {
+      const lQuery = query(collection(db, "lessons"), orderBy("id", "asc"));
+      const lSnap = await getDocs(lQuery);
+      const mapping: Record<number, number> = {};
+      lSnap.docs.forEach((d, idx) => {
+        mapping[d.data().id] = idx + 1;
+      });
+      setLessonMap(mapping);
     };
+    fetchLessonMap();
 
-    fetchData();
+    return () => unsubscribeHomework();
   }, []);
 
   if (loading) {

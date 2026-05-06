@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { doc, getDoc, collection, getDocs, query, orderBy, where } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, query, orderBy, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -26,35 +26,33 @@ export default function LessonPage() {
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // 1. Fetch current lesson
-        const docRef = doc(db, "lessons", params.id as string);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          setLesson(snap.data() as Lesson);
-        }
+    if (!params.id) return;
 
-        // 2. Fetch lesson to get order
-        const lessonsRef = collection(db, "lessons");
-        const q = query(lessonsRef, where("id", "==", Number(params.id)));
-        const lessonsSnap = await getDocs(q);
-        if (!lessonsSnap.empty) {
-          setDisplayNumber(lessonsSnap.docs[0].data().order);
-        }
+    // 1. Real-time Lesson data
+    const docRef = doc(db, "lessons", params.id as string);
+    const unsubscribeLesson = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        setLesson(snap.data() as Lesson);
+      } else {
+        setLesson(null);
+      }
+      setLoading(false);
+    });
 
-      } catch (error) {
-        console.warn("Error fetching lesson data:", error);
-      } finally {
-        setLoading(false);
+    // 2. Fetch lesson order (usually doesn't change during session, but good to have)
+    const fetchOrder = async () => {
+      const q = query(collection(db, "lessons"), where("id", "==", Number(params.id)));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        setDisplayNumber(snap.docs[0].data().order);
       }
     };
+    fetchOrder();
 
-    if (params.id) { 
-      fetchData(); 
-      const savedNotes = localStorage.getItem(`lesson_notes_${params.id}`);
-      if (savedNotes) setNotes(savedNotes);
-    }
+    const savedNotes = localStorage.getItem(`lesson_notes_${params.id}`);
+    if (savedNotes) setNotes(savedNotes);
+
+    return () => unsubscribeLesson();
   }, [params.id]);
 
   const saveNotes = (val: string) => {

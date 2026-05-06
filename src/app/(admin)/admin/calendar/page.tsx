@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, onSnapshot, doc, deleteDoc, where, orderBy, updateDoc, addDoc, getDoc, serverTimestamp, increment } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, deleteDoc, where, orderBy, updateDoc, addDoc, getDoc, serverTimestamp, increment, writeBatch, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -166,11 +166,31 @@ export default function CalendarPage() {
     if (!deleteId) return;
     setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "sessions", deleteId));
+      const batch = writeBatch(db);
+
+      // 1. Find all payment logs for this session
+      const q = query(collection(db, "payment_logs"), where("sessionId", "==", deleteId));
+      const logsSnap = await getDocs(q);
+
+      // 2. Revert student balances and delete logs
+      logsSnap.forEach((logDoc) => {
+        const logData = logDoc.data();
+        const userRef = doc(db, "users", logData.studentId);
+        batch.update(userRef, {
+          paid: increment(-logData.amount),
+          remaining: increment(logData.amount)
+        });
+        batch.delete(logDoc.ref);
+      });
+
+      // 3. Delete the session itself
+      batch.delete(doc(db, "sessions", deleteId));
+
+      await batch.commit();
       setDeleteId(null);
     } catch (error) {
       console.error("Error deleting session:", error);
-      alert("Failed to delete session.");
+      alert("Failed to delete session and associated payments.");
     } finally {
       setIsDeleting(false);
     }
@@ -398,7 +418,7 @@ export default function CalendarPage() {
         onConfirm={handleDeleteSession}
         loading={isDeleting}
         title="Delete Session"
-        description="This will permanently delete this scheduled session. Note: Any payment logs already created for this session will remain in the finance records."
+        description="This will permanently delete this session and all associated payment logs. Students' balances will be automatically reverted. This action cannot be undone."
       />
     </div>
   );

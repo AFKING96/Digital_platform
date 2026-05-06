@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, getDocs, orderBy } from "firebase/firestore";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { db, auth } from "@/lib/firebase";
+import { createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
+import { initializeApp, getApp, getApps, deleteApp } from "firebase/app";
+import { db, auth, firebaseConfig } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -72,7 +73,12 @@ export default function StudentsPage() {
     e.preventDefault();
     try {
       const email = `${addForm.universityId}@app.com`;
-      const userCredential = await createUserWithEmailAndPassword(auth, email, addForm.password);
+      // Use a secondary app to create the user without logging out the admin
+      const appName = `Secondary-${Date.now()}`;
+      const secondaryApp = initializeApp(firebaseConfig, appName);
+      const secondaryAuth = getAuth(secondaryApp);
+      
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, addForm.password);
       
       await setDoc(doc(db, "users", userCredential.user.uid), {
         name: addForm.name,
@@ -84,6 +90,9 @@ export default function StudentsPage() {
         paid: Number(addForm.paid),
         remaining: 0
       });
+
+      await signOut(secondaryAuth);
+      await deleteApp(secondaryApp);
       
       setIsAddOpen(false);
       setAddForm({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1 });
@@ -108,7 +117,11 @@ export default function StudentsPage() {
         if (name && universityId && password) {
           try {
             const email = `${universityId.trim()}@app.com`;
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password.trim());
+            const appName = `Bulk-${Date.now()}-${Math.random()}`;
+            const secondaryApp = initializeApp(firebaseConfig, appName);
+            const secondaryAuth = getAuth(secondaryApp);
+            
+            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password.trim());
             
             await setDoc(doc(db, "users", userCredential.user.uid), {
               name: name.trim(),
@@ -120,6 +133,9 @@ export default function StudentsPage() {
               paid: Number(paid || 0),
               remaining: 0
             });
+            
+            await signOut(secondaryAuth);
+            await deleteApp(secondaryApp);
             count++;
           } catch (error) {
             console.error("Error creating student from CSV:", name, error);

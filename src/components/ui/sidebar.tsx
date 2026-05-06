@@ -81,12 +81,36 @@ const transitionProps: Transition = {
 
 const staggerVariants = {
   open: {
-    transition: { staggerChildren: 0.01, delayChildren: 0.01 },
+    transition: { staggerChildren: 0.005, delayChildren: 0.005 },
   },
 };
 
 
 import { useAuth } from "@/components/providers/auth-provider";
+
+const adminLinks = [
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/students", label: "Students", icon: UserCircle },
+  { href: "/admin/groups", label: "Groups", icon: Users },
+  { href: "/admin/calendar", label: "Calendar", icon: CalendarIcon },
+  { href: "/admin/at-risk", label: "At-Risk", icon: AlertTriangle },
+  { href: "/admin/homework", label: "Homework", icon: ClipboardList },
+  { href: "/admin/lessons", label: "Lessons", icon: GraduationCap },
+  { href: "/admin/quizzes", label: "Quizzes", icon: FileClock },
+  { href: "/admin/materials", label: "Materials", icon: Layout },
+  { href: "/admin/finance", label: "Finance", icon: DollarSign },
+  { href: "/admin/submissions", label: "Submissions", icon: MessagesSquare },
+  { href: "/admin/notifications", label: "Notifications", icon: Bell },
+];
+
+const studentLinks = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/homework", label: "Homework", icon: ClipboardList },
+  { href: "/materials", label: "Materials", icon: BookOpen },
+  { href: "/practice", label: "Practice", icon: Target },
+  { href: "/results", label: "Results", icon: FileCheck },
+  { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
+];
 
 export function SessionNavBar() {
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -94,30 +118,6 @@ export function SessionNavBar() {
   const { user, userData } = useAuth();
   const role = userData?.role || "student";
   const pathname = usePathname();
-
-  const adminLinks = [
-    { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/admin/students", label: "Students", icon: UserCircle },
-    { href: "/admin/groups", label: "Groups", icon: Users },
-    { href: "/admin/calendar", label: "Calendar", icon: CalendarIcon },
-    { href: "/admin/at-risk", label: "At-Risk", icon: AlertTriangle },
-    { href: "/admin/homework", label: "Homework", icon: ClipboardList },
-    { href: "/admin/lessons", label: "Lessons", icon: GraduationCap },
-    { href: "/admin/quizzes", label: "Quizzes", icon: FileClock },
-    { href: "/admin/materials", label: "Materials", icon: Layout },
-    { href: "/admin/finance", label: "Finance", icon: DollarSign },
-    { href: "/admin/submissions", label: "Submissions", icon: MessagesSquare },
-    { href: "/admin/notifications", label: "Notifications", icon: Bell },
-  ];
-
-  const studentLinks = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/dashboard/homework", label: "Homework", icon: ClipboardList },
-    { href: "/materials", label: "Materials", icon: BookOpen },
-    { href: "/practice", label: "Practice", icon: Target },
-    { href: "/results", label: "Results", icon: FileCheck },
-    { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
-  ];
 
   const links = role === "admin" ? adminLinks : studentLinks;
 

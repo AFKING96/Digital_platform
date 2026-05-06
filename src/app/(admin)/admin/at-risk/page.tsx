@@ -40,7 +40,15 @@ export default function AtRiskPage() {
             reasons.push("Low accuracy (< 50%)");
           }
           
-          const lastActive = data.lastActiveDate?.toDate() || new Date(0);
+          let lastActive: Date;
+          if (data.lastActiveDate && typeof data.lastActiveDate.toDate === 'function') {
+            lastActive = data.lastActiveDate.toDate();
+          } else if (typeof data.lastActiveDate === 'string') {
+            lastActive = new Date(data.lastActiveDate);
+          } else {
+            lastActive = new Date(0);
+          }
+
           if (lastActive < threeDaysAgo) {
             reasons.push("Inactive for over 3 days");
           }
@@ -132,7 +140,15 @@ export default function AtRiskPage() {
                         <Clock className="w-3 h-3" /> Last Active
                       </div>
                       <div className="text-sm font-medium text-white">
-                        {student.lastActiveDate?.toDate().toLocaleDateString() || "Never"}
+                        {(() => {
+                          const date = student.lastActiveDate;
+                          if (date && typeof (date as any).toDate === 'function') {
+                            return (date as any).toDate().toLocaleDateString();
+                          } else if (typeof date === 'string') {
+                            return new Date(date).toLocaleDateString();
+                          }
+                          return "Never";
+                        })()}
                       </div>
                     </div>
                   </div>

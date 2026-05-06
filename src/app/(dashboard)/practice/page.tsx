@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getDocs, doc, getDoc, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, query, orderBy, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -24,35 +24,29 @@ export default function PracticePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchPracticeData = async () => {
-      if (!auth.currentUser) return;
+    if (!auth.currentUser) return;
 
-      try {
-        // Get user's current lesson
-        const userDocRef = doc(db, "users", auth.currentUser.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        
-        if (userDocSnap.exists()) {
-          setCurrentLesson(userDocSnap.data().currentLesson);
-        }
-
-        // Get all lessons
-        const lessonsQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
-        const lessonsSnap = await getDocs(lessonsQuery);
-        
-        const lessonsData = lessonsSnap.docs.map(doc => ({
-          ...doc.data()
-        })) as Lesson[];
-        
-        setLessons(lessonsData);
-      } catch (error) {
-        console.error("Error fetching practice data", error);
-      } finally {
-        setLoading(false);
+    // 1. Real-time User Data
+    const userUnsubscribe = onSnapshot(doc(db, "users", auth.currentUser.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        setCurrentLesson(docSnap.data().currentLesson);
       }
-    };
+    });
 
-    fetchPracticeData();
+    // 2. Real-time Lessons
+    const lessonsQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
+    const lessonsUnsubscribe = onSnapshot(lessonsQuery, (snapshot) => {
+      const lessonsData = snapshot.docs.map(doc => ({
+        ...doc.data()
+      })) as Lesson[];
+      setLessons(lessonsData);
+      setLoading(false);
+    });
+
+    return () => {
+      userUnsubscribe();
+      lessonsUnsubscribe();
+    };
   }, []);
 
   if (loading) {
