@@ -33,13 +33,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${lexend.variable} ${manrope.variable} dark`}>
-      <body className="font-sans min-h-screen bg-[#0B1220] text-white antialiased relative">
-        <AuthProvider>
-          <div className="bg-blob-primary pointer-events-none" />
-          <div className="bg-blob-secondary pointer-events-none" />
-          {children}
-        </AuthProvider>
+    <html lang="en" className={`${lexend.variable} ${manrope.variable} dark`} suppressHydrationWarning>
+      <body suppressHydrationWarning>
+        <div className="font-sans min-h-screen bg-[#0B1220] text-white antialiased relative">
+          <AuthProvider>
+            <div className="bg-blob-primary pointer-events-none" />
+            <div className="bg-blob-secondary pointer-events-none" />
+            {children}
+          </AuthProvider>
+        </div>
       </body>
     </html>
   );

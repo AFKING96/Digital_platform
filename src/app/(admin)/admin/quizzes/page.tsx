@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, orderBy, onSnapshot, doc, setDoc, getDocs } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, setDoc, getDocs, deleteDoc, writeBatch, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -11,7 +11,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Save, Trash2, CheckSquare, Link as LinkIcon, Type, List, CheckCircle2, Wand2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { deleteDoc, writeBatch } from "firebase/firestore";
 
 interface Question {
   id: number;

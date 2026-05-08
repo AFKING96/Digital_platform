@@ -61,10 +61,52 @@ export default function DashboardPage() {
       }
     });
 
-    // 2. Real-time Lessons
+    // 3. Real-time Submissions count
+    const subsQuery = query(collection(db, "submissions"), where("userId", "==", auth.currentUser.uid));
+    const subsUnsubscribe = onSnapshot(subsQuery, (snapshot) => {
+      setSubmissionsCount(snapshot.size);
+    });
+
+    return () => {
+      userUnsubscribe();
+      subsUnsubscribe();
+    };
+  }, []);
+
+  // Fetch subjects when userData.enrolledSubjects changes
+  useEffect(() => {
+    const enrolledIds = userData?.enrolledSubjects || [];
+    if (enrolledIds.length > 0) {
+      const fetchSubjects = async () => {
+        const subjectDocs = await Promise.all(
+          enrolledIds.map((id: string) => getDoc(doc(db, "subjects", id)))
+        );
+        const sData = subjectDocs
+          .filter(snap => snap.exists())
+          .map(snap => ({ id: snap.id, ...snap.data() } as Subject));
+
+        setSubjects(sData);
+        // Automatically select if only 1 subject
+        setLoading(false); // Can hide skeleton once subjects are loaded
+      };
+      fetchSubjects();
+    } else if (userData) {
+      // If userData is loaded but no enrolled subjects, stop loading
+      setLoading(false);
+    }
+  }, [userData?.enrolledSubjects]);
+
+  // Set selectedSubjectId automatically
+  useEffect(() => {
+    if (subjects.length === 1 && !selectedSubjectId) {
+      setSelectedSubjectId(subjects[0].id);
+    }
+  }, [subjects, selectedSubjectId]);
+
+  // Subscribe to lessons based on selectedSubjectId
+  useEffect(() => {
     let lessonsQuery;
     if (selectedSubjectId) {
-      // Remove orderBy to avoid index
       lessonsQuery = query(collection(db, "lessons"), where("subjectId", "==", selectedSubjectId));
     } else {
       lessonsQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
@@ -88,41 +130,8 @@ export default function DashboardPage() {
       setLoading(false);
     });
 
-    // 2.5 Fetch Enrolled Subjects
-    const fetchSubjects = async () => {
-      if (!auth.currentUser) return;
-      const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-      if (userDoc.exists()) {
-        const enrolledIds = userDoc.data().enrolledSubjects || [];
-        if (enrolledIds.length > 0) {
-          const sData: Subject[] = [];
-          for (const id of enrolledIds) {
-            const sSnap = await getDoc(doc(db, "subjects", id));
-            if (sSnap.exists()) {
-              sData.push({ id: sSnap.id, ...sSnap.data() } as Subject);
-            }
-          }
-          setSubjects(sData);
-          if (sData.length === 1 && !selectedSubjectId) {
-            setSelectedSubjectId(sData[0].id);
-          }
-        }
-      }
-    };
-    fetchSubjects();
-
-    // 3. Real-time Submissions count
-    const subsQuery = query(collection(db, "submissions"), where("userId", "==", auth.currentUser.uid));
-    const subsUnsubscribe = onSnapshot(subsQuery, (snapshot) => {
-      setSubmissionsCount(snapshot.size);
-    });
-
-    return () => {
-      userUnsubscribe();
-      lessonsUnsubscribe();
-      subsUnsubscribe();
-    };
-  }, []);
+    return () => lessonsUnsubscribe();
+  }, [selectedSubjectId]);
 
   if (loading) {
     return (

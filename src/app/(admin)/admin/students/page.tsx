@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus, Save, User as UserIcon, BookOpen, Target, CheckCircle2, DollarSign, Upload, Trash2, Layout, CreditCard, Activity, ChevronRight, Mail, AlertTriangle } from "lucide-react";
+import { Search, Plus, Save, User as UserIcon, Users, BookOpen, Target, CheckCircle2, DollarSign, Upload, Trash2, Layout, CreditCard, Activity, ChevronRight, Mail, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -41,6 +41,8 @@ export default function StudentsPage() {
   
   // Forms
   const [addForm, setAddForm] = useState({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1, initialSubject: "" });
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(0);
   const [editForm, setEditForm] = useState({ currentLesson: 1, paid: 0, remaining: 0 });
   const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
   const [allSubjects, setAllSubjects] = useState<{id: string, name: string}[]>([]);
@@ -124,39 +126,51 @@ export default function StudentsPage() {
       const text = event.target?.result as string;
       const lines = text.split('\n').filter(l => l.trim().length > 0);
       
+      setIsBulkUploading(true);
+      setBulkProgress(0);
       let count = 0;
-      for (const line of lines.slice(1)) { // skip header
-        const [name, universityId, password, currentLesson, paid] = line.split(',');
-        if (name && universityId && password) {
-          try {
-            const email = `${universityId.trim()}@app.com`;
-            const appName = `Bulk-${Date.now()}-${Math.random()}`;
-            const secondaryApp = initializeApp(firebaseConfig, appName);
-            const secondaryAuth = getAuth(secondaryApp);
-            
-            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password.trim());
-            
-            await setDoc(doc(db, "users", userCredential.user.uid), {
-              name: name.trim(),
-              email,
-              role: "student",
-              currentLesson: Number(currentLesson || 1),
-              solvedQuestions: 0,
-              accuracy: 0,
-              paid: Number(paid || 0),
-              remaining: 0
-            });
-            
-            await signOut(secondaryAuth);
-            await deleteApp(secondaryApp);
-            count++;
-          } catch (error) {
-            console.error("Error creating student from CSV:", name, error);
+      const total = lines.length - 1;
+
+      // Initialize secondary app ONCE for the entire bulk process
+      const appName = `Bulk-${Date.now()}`;
+      const secondaryApp = initializeApp(firebaseConfig, appName);
+      const secondaryAuth = getAuth(secondaryApp);
+
+      try {
+        for (const [index, line] of lines.slice(1).entries()) { // skip header
+          const [name, universityId, password, currentLesson, paid] = line.split(',');
+          if (name && universityId && password) {
+            try {
+              const email = `${universityId.trim()}@app.com`;
+              
+              const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password.trim());
+              
+              await setDoc(doc(db, "users", userCredential.user.uid), {
+                name: name.trim(),
+                email,
+                role: "student",
+                currentLesson: Number(currentLesson || 1),
+                solvedQuestions: 0,
+                accuracy: 0,
+                paid: Number(paid || 0),
+                remaining: 0
+              });
+              
+              await signOut(secondaryAuth);
+              count++;
+            } catch (error) {
+              console.error("Error creating student from CSV:", name, error);
+            }
           }
+          setBulkProgress(Math.round(((index + 1) / total) * 100));
         }
+        alert(`Bulk upload completed! Added ${count} students.`);
+      } finally {
+        await deleteApp(secondaryApp);
+        setIsBulkUploading(false);
+        setBulkProgress(0);
+        if (e.target) e.target.value = '';
       }
-      alert(`Bulk upload completed! Added ${count} students.`);
-      if (e.target) e.target.value = '';
     };
     reader.readAsText(file);
   };
@@ -255,24 +269,50 @@ export default function StudentsPage() {
           <p className="text-muted-foreground">Manage enrolled students, progress, and tuition.</p>
         </div>
         
-        <div className="flex items-center gap-2">
-          <Button variant="outline" className="border-white/10 hover:bg-white/5 relative overflow-hidden" onClick={() => document.getElementById('csv-upload')?.click()}>
-            <Upload className="w-4 h-4 mr-2 text-primary" /> Bulk CSV
-            <input 
-              id="csv-upload" 
+        <div className="flex flex-wrap gap-3">
+          {isBulkUploading && (
+            <div className="flex flex-col gap-2 min-w-[200px] bg-primary/5 border border-primary/20 p-3 rounded-xl">
+              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-primary">
+                <span>Uploading Students...</span>
+                <span>{bulkProgress}%</span>
+              </div>
+              <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
+                <motion.div 
+                  className="h-full bg-primary"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${bulkProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+          <div className="relative group">
+            <Input 
               type="file" 
               accept=".csv" 
-              className="hidden" 
               onChange={handleBulkUpload} 
+              className="hidden" 
+              id="bulk-upload"
+              disabled={isBulkUploading}
             />
+            <Button 
+              variant="outline" 
+              className="bg-white/5 border-white/10 hover:bg-white/10 h-11 px-5 rounded-xl group"
+              onClick={() => document.getElementById('bulk-upload')?.click()}
+              disabled={isBulkUploading}
+            >
+              <Users className="w-4 h-4 mr-2 text-primary" />
+              {isBulkUploading ? "Processing..." : "Bulk Upload (CSV)"}
+            </Button>
+          </div>
+          <Button 
+            onClick={() => setIsAddOpen(true)} 
+            className="bg-primary hover:bg-primary/90 btn-glow h-11 px-6 rounded-xl"
+            disabled={isBulkUploading}
+          >
+            <Plus className="w-4 h-4 mr-2" /> Add Student
           </Button>
 
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger render={
-              <Button className="bg-primary hover:bg-primary/90 btn-glow transition-all hover:scale-105">
-                <Plus className="w-4 h-4 mr-2" /> Add Student
-              </Button>
-            } />
             <DialogContent className="bg-black/90 border-white/10 text-white p-6 max-w-md backdrop-blur-xl">
             <DialogHeader>
               <DialogTitle>Register New Student</DialogTitle>
