@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, onSnapshot, orderBy, where, getDocs } from "firebase/firestore";
+import { collection, query, onSnapshot, orderBy, where, getDocs, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -23,7 +23,6 @@ interface Lesson {
   id: number;
   title: string;
   order: number;
-  isUnlocked?: boolean;
 }
 
 export default function HomeworkLandingPage() {
@@ -31,7 +30,19 @@ export default function HomeworkLandingPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [homeworks, setHomeworks] = useState<Homework[]>([]);
   const [submissions, setSubmissions] = useState<string[]>([]);
+  const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user) {
+      const unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+        if (docSnap.exists()) {
+          setUserData(docSnap.data());
+        }
+      });
+      return () => unsubUser();
+    }
+  }, [user]);
 
   useEffect(() => {
     // Fetch Lessons
@@ -39,8 +50,7 @@ export default function HomeworkLandingPage() {
       setLessons(snap.docs.map(d => ({ 
         id: d.data().id, 
         title: d.data().title, 
-        order: d.data().order,
-        isUnlocked: d.data().isUnlocked 
+        order: d.data().order
       })));
     });
 
@@ -80,7 +90,7 @@ export default function HomeworkLandingPage() {
       </div>
 
       <div className="grid gap-6">
-        {lessons.filter(l => l.isUnlocked !== false).map((lesson, idx) => {
+        {lessons.filter(l => userData?.unlockedLessons ? userData.unlockedLessons.includes(l.id) : false).map((lesson, idx) => {
           const lessonHomeworks = homeworks.filter(h => h.lessonId === lesson.id);
           const solvedCount = lessonHomeworks.filter(h => submissions.includes(h.id)).length;
           const totalCount = lessonHomeworks.length;
@@ -170,7 +180,7 @@ export default function HomeworkLandingPage() {
         })}
       </div>
 
-      {lessons.filter(l => l.isUnlocked !== false && homeworks.some(h => h.lessonId === l.id)).length === 0 && (
+      {lessons.filter(l => (userData?.unlockedLessons ? userData.unlockedLessons.includes(l.id) : false) && homeworks.some(h => h.lessonId === l.id)).length === 0 && (
         <div className="text-center py-32 border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.02]">
           <ClipboardList className="w-20 h-20 text-white/5 mx-auto mb-6" />
           <h2 className="text-2xl font-bold">No Homework Yet</h2>

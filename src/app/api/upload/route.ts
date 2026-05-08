@@ -24,8 +24,13 @@ export async function POST(request: Request) {
       // Ignore if exists
     }
 
-    // Keep original filename or generate a clean one
-    const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "");
+    // Create a safe, unique filename
+    // We preserve the extension and use a timestamp to avoid collisions
+    const ext = path.extname(file.name);
+    const baseName = path.basename(file.name, ext);
+    // Replace only problematic characters like slashes, but keep unicode/Arabic
+    const sanitizedBase = baseName.replace(/[\/\\]/g, "").replace(/\s+/g, "-") || "file";
+    const safeName = `${Date.now()}-${sanitizedBase}${ext}`;
     const filepath = path.join(uploadDir, safeName);
     
     await writeFile(filepath, buffer);

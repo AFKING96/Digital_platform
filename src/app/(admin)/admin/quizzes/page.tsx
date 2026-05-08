@@ -318,15 +318,14 @@ export default function QuizzesPage() {
                           <span className="text-xs font-bold uppercase tracking-wider">Correct Answer</span>
                         </div>
                         {q.type === "true_false" ? (
-                          <Select value={q.correctAnswer} onValueChange={(val: any) => updateQuestion(index, "correctAnswer", val)}>
-                            <SelectTrigger className="w-[150px] bg-black/40 border-green-500/30 text-green-400">
-                              <SelectValue placeholder="Select..." />
-                            </SelectTrigger>
-                            <SelectContent className="bg-[#0B1220] border-white/10 text-white">
-                              <SelectItem value="True">True</SelectItem>
-                              <SelectItem value="False">False</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <select
+                            className="bg-black/40 border border-green-500/30 rounded-lg px-3 py-2 text-sm font-bold text-green-400 focus:outline-none focus:border-green-500 w-[150px]"
+                            value={q.correctAnswer}
+                            onChange={(e) => updateQuestion(index, "correctAnswer", e.target.value)}
+                          >
+                            <option value="True" className="bg-[#0B1220] text-white">True</option>
+                            <option value="False" className="bg-[#0B1220] text-white">False</option>
+                          </select>
                         ) : (
                           <Input 
                             placeholder="Exact correct option text..." 

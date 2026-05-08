@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, onSnapshot, orderBy, where, getDocs } from "firebase/firestore";
+import { collection, query, onSnapshot, orderBy, where, getDocs, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -15,7 +15,6 @@ interface Lesson {
   id: number;
   title: string;
   order: number;
-  isUnlocked?: boolean;
 }
 
 interface Question {
@@ -28,7 +27,19 @@ export default function PracticeLandingPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [questionsCount, setQuestionsCount] = useState<Record<number, number>>({});
   const [solvedCount, setSolvedCount] = useState<Record<number, number>>({});
+  const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user) {
+      const unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+        if (docSnap.exists()) {
+          setUserData(docSnap.data());
+        }
+      });
+      return () => unsubUser();
+    }
+  }, [user]);
 
   useEffect(() => {
     // Fetch Lessons
@@ -36,10 +47,8 @@ export default function PracticeLandingPage() {
       const lessonData = snap.docs.map(d => ({ 
         id: d.data().id, 
         title: d.data().title, 
-        order: d.data().order,
-        isUnlocked: d.data().isUnlocked 
+        order: d.data().order
       }));
-      setLessons(lessonData);
 
       // Fetch Question Counts for each lesson
       const qSnap = await getDocs(collection(db, "practice_questions"));
@@ -49,21 +58,27 @@ export default function PracticeLandingPage() {
         counts[lid] = (counts[lid] || 0) + 1;
       });
       setQuestionsCount(counts);
-
-      // Fetch Solved Counts for current user
-      if (user) {
-        const sSnap = await getDocs(query(collection(db, "submissions"), where("userId", "==", user.uid)));
-        const solved: Record<number, number> = {};
-        // We need a way to know if it was a practice submission.
-        // For now, let's assume we track it in the submission metadata.
-        // Actually, we'll implement a better tracking in the solver.
-        setSolvedCount(solved);
-      }
-      
-      setLoading(false);
     });
 
-    return () => unsubLessons();
+    let unsubSubs = () => {};
+    if (user) {
+      unsubSubs = onSnapshot(query(collection(db, "submissions"), where("userId", "==", user.uid), where("type", "==", "practice")), (snap) => {
+        const solved: Record<number, number> = {};
+        snap.docs.forEach(doc => {
+          const lid = doc.data().lessonId;
+          solved[lid] = (solved[lid] || 0) + 1;
+        });
+        setSolvedCount(solved);
+        setLoading(false);
+      });
+    } else {
+      setLoading(false);
+    }
+
+    return () => {
+      unsubLessons();
+      unsubSubs();
+    };
   }, [user]);
 
   if (loading) return <div className="p-8 space-y-4"><Skeleton className="h-64 w-full bg-white/5" /><Skeleton className="h-64 w-full bg-white/5" /></div>;
@@ -78,7 +93,7 @@ export default function PracticeLandingPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {lessons.filter(l => l.isUnlocked !== false).map((lesson, idx) => {
+        {lessons.filter(l => userData?.unlockedLessons ? userData.unlockedLessons.includes(l.id) : false).map((lesson, idx) => {
           const total = questionsCount[lesson.id] || 0;
           const solved = solvedCount[lesson.id] || 0;
           const progress = total > 0 ? (solved / total) * 100 : 0;

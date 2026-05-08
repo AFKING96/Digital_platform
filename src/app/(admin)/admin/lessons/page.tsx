@@ -21,7 +21,6 @@ interface Lesson {
   order: number;
   title: string;
   summary: string[];
-  isUnlocked?: boolean;
   subjectId?: string;
   file?: string;
 }
@@ -32,7 +31,7 @@ export default function LessonsPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   
-  const [form, setForm] = useState({ id: 1, title: "", summary: "", file: "", isUnlocked: false });
+  const [form, setForm] = useState({ id: 1, title: "", summary: "", file: "" });
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -146,7 +145,6 @@ export default function LessonsPage() {
         title: form.title,
         summary: summaryArray,
         file: form.file || "",
-        isUnlocked: editingId ? (lessons.find(l => l.id === editingId)?.isUnlocked ?? false) : false,
         subjectId: selectedSubjectId
       };
 
@@ -160,7 +158,7 @@ export default function LessonsPage() {
 
       setIsAdding(false);
       setEditingId(null);
-      setForm({ id: Date.now(), title: "", summary: "", file: "", isUnlocked: false });
+      setForm({ id: Date.now(), title: "", summary: "", file: "" });
     } catch (error) {
       console.error("Error saving lesson:", error);
     }
@@ -210,24 +208,13 @@ export default function LessonsPage() {
       id: lesson.id,
       title: lesson.title,
       summary: lesson.summary.join('\n'),
-      file: lesson.file || "",
-      isUnlocked: lesson.isUnlocked || false
+      file: lesson.file || ""
     });
     setEditingId(lesson.id);
     setIsAdding(true);
   };
 
-  const toggleUnlock = async (lesson: Lesson) => {
-    try {
-      const newStatus = !lesson.isUnlocked;
-      await setDoc(doc(db, "lessons", lesson.id.toString()), {
-        ...lesson,
-        isUnlocked: newStatus
-      });
-    } catch (error) {
-      console.error("Error toggling lesson status:", error);
-    }
-  };
+
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -261,7 +248,7 @@ export default function LessonsPage() {
           <Button onClick={() => {
             setIsAdding(!isAdding);
             setEditingId(null);
-            setForm({ id: Date.now(), title: "", summary: "", file: "", isUnlocked: false });
+            setForm({ id: Date.now(), title: "", summary: "", file: "" });
           }} className="bg-primary hover:bg-primary/90 btn-glow shrink-0">
             {isAdding && !editingId ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
             {isAdding && !editingId ? "Cancel" : "Add Lesson"}
@@ -350,18 +337,7 @@ export default function LessonsPage() {
               )}
             </div>
             <div className="flex gap-2 shrink-0">
-              <Button 
-                size="sm" 
-                variant="outline" 
-                className={`${lesson.isUnlocked ? "border-green-500/20 text-green-500 hover:bg-green-500/10" : "border-amber-500/20 text-amber-500 hover:bg-amber-500/10"}`}
-                onClick={() => toggleUnlock(lesson)}
-              >
-                {lesson.isUnlocked ? (
-                  <><Unlock className="w-4 h-4 mr-2" /> Unlocked</>
-                ) : (
-                  <><Lock className="w-4 h-4 mr-2" /> Locked</>
-                )}
-              </Button>
+
               <Button size="sm" variant="outline" className="border-white/10 hover:bg-white/5" onClick={() => startEdit(lesson)}>
                 <Edit2 className="w-4 h-4 mr-2" /> Edit
               </Button>

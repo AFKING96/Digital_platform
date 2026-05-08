@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, collection, getDocs, query, orderBy, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useParams, useRouter } from "next/navigation";
+import { useAuth } from "@/components/providers/auth-provider";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,16 +16,28 @@ interface Lesson {
   id: number;
   title: string;
   summary: string[];
-  isUnlocked?: boolean;
 }
 
 export default function LessonPage() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [userData, setUserData] = useState<any>(null);
   const [displayNumber, setDisplayNumber] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
+
+  useEffect(() => {
+    if (user) {
+      const unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+        if (docSnap.exists()) {
+          setUserData(docSnap.data());
+        }
+      });
+      return () => unsubUser();
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!params.id) return;
@@ -71,7 +84,11 @@ export default function LessonPage() {
     );
   }
 
-  if (!lesson || lesson.isUnlocked === false) {
+  const isUnlocked = lesson && (userData?.unlockedLessons 
+    ? userData.unlockedLessons.includes(lesson.id) 
+    : false);
+
+  if (!lesson || !isUnlocked) {
     return (
       <div className="text-center py-20 px-6 max-w-lg mx-auto flex flex-col items-center">
         <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">

@@ -66,14 +66,9 @@ export default function QuestionAnalyticsPage() {
 
         // Fetch Total Enrolled Students for this question's subject
         try {
-          const lessonSnap = await getDocs(query(collection(db, "lessons"), where("id", "==", qData.lessonId)));
-          if (!lessonSnap.empty) {
-            const subjectId = lessonSnap.docs[0].data().subjectId;
-            if (subjectId) {
-              const enrolledSnap = await getDocs(query(collection(db, "users"), where("enrolledSubjects", "array-contains", subjectId)));
-              setTotalEnrolled(enrolledSnap.size);
-            }
-          }
+          // Count only students who have this specific lesson unlocked
+          const expectedSnap = await getDocs(query(collection(db, "users"), where("unlockedLessons", "array-contains", qData.lessonId)));
+          setTotalEnrolled(expectedSnap.size);
         } catch (error) {
           console.error("Error fetching enrollment data:", error);
         }

@@ -23,6 +23,7 @@ interface Student {
   name: string;
   email: string;
   currentLesson: number;
+  unlockedLessons?: number[];
   solvedQuestions: number;
   accuracy: number;
   paid: number;
@@ -35,7 +36,7 @@ export default function StudentsPage() {
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [lessons, setLessons] = useState<{id: number, title: string, order: number}[]>([]);
+  const [lessons, setLessons] = useState<{id: number, title: string, order: number, subjectId?: string}[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
@@ -43,7 +44,7 @@ export default function StudentsPage() {
   const [addForm, setAddForm] = useState({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1, initialSubject: "" });
   const [isBulkUploading, setIsBulkUploading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
-  const [editForm, setEditForm] = useState({ currentLesson: 1, paid: 0, remaining: 0 });
+  const [editForm, setEditForm] = useState<{currentLesson: number, paid: number, remaining: number, unlockedLessons: number[]}>({ currentLesson: 1, paid: 0, remaining: 0, unlockedLessons: [] });
   const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
   const [allSubjects, setAllSubjects] = useState<{id: string, name: string}[]>([]);
 
@@ -60,11 +61,11 @@ export default function StudentsPage() {
       const q = query(collection(db, "lessons"), orderBy("order", "asc"));
       const snap = await getDocs(q);
       const mapping: Record<number, number> = {};
-      const lList: {id: number, title: string, order: number}[] = [];
+      const lList: {id: number, title: string, order: number, subjectId?: string}[] = [];
       snap.docs.forEach((d) => {
         const data = d.data();
         mapping[data.id] = data.order;
-        lList.push({ id: data.id, title: data.title, order: data.order });
+        lList.push({ id: data.id, title: data.title, order: data.order, subjectId: data.subjectId });
       });
       setLessonMap(mapping);
       setLessons(lList);
@@ -180,7 +181,8 @@ export default function StudentsPage() {
     setEditForm({
       currentLesson: student.currentLesson,
       paid: student.paid || 0,
-      remaining: student.remaining || 0
+      remaining: student.remaining || 0,
+      unlockedLessons: student.unlockedLessons || []
     });
   };
 
@@ -189,6 +191,7 @@ export default function StudentsPage() {
     try {
       await updateDoc(doc(db, "users", selectedStudent.id), {
         currentLesson: Number(editForm.currentLesson),
+        unlockedLessons: editForm.unlockedLessons,
         paid: Number(editForm.paid),
         remaining: Number(editForm.remaining)
       });
@@ -604,23 +607,50 @@ export default function StudentsPage() {
                       
                       <div className="space-y-2 relative z-10">
                         <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2 px-1">
-                          <Activity className="w-3 h-3 text-primary" /> Module Progression
+                          <Activity className="w-3 h-3 text-primary" /> Module Access
                         </label>
-                        <Select 
-                          value={editForm.currentLesson.toString()} 
-                          onValueChange={(val: string | null) => val && setEditForm({...editForm, currentLesson: Number(val)})}
-                        >
-                          <SelectTrigger className="w-full bg-[#0B1220] border-white/10 rounded-xl h-11 text-sm focus:ring-primary/50">
-                            <SelectValue placeholder="Select current module" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-[#0B1220] border-white/10 text-white backdrop-blur-xl">
-                            {lessons.map((l) => (
-                              <SelectItem key={l.id} value={l.id.toString()} className="focus:bg-primary/20 focus:text-primary">
-                                Module {l.order}: {l.title}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="space-y-4 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar bg-black/20 rounded-xl p-4 border border-white/5">
+                          {allSubjects.filter(s => currentStudent.enrolledSubjects?.includes(s.id)).length === 0 ? (
+                            <div className="text-xs text-muted-foreground text-center py-4">Enroll student in a subject first</div>
+                          ) : (
+                            allSubjects.filter(s => currentStudent.enrolledSubjects?.includes(s.id)).map(subject => (
+                              <div key={subject.id} className="space-y-2">
+                                <div className="text-xs font-bold text-white/80">{subject.name}</div>
+                                <div className="space-y-2 pl-3 border-l-2 border-primary/20 py-1">
+                                  {lessons.filter(l => l.subjectId === subject.id).length === 0 ? (
+                                    <div className="text-[10px] text-muted-foreground italic">No modules found</div>
+                                  ) : (
+                                    lessons.filter(l => l.subjectId === subject.id).map(lesson => {
+                                      const isUnlocked = editForm.unlockedLessons.includes(lesson.id);
+                                      return (
+                                        <div key={lesson.id} className="flex items-center gap-2 group">
+                                          <div className="relative flex items-center justify-center">
+                                            <input 
+                                              type="checkbox" 
+                                              id={`lesson-${lesson.id}`}
+                                              checked={isUnlocked}
+                                              onChange={(e) => {
+                                                const newUnlocked = e.target.checked 
+                                                  ? [...editForm.unlockedLessons, lesson.id]
+                                                  : editForm.unlockedLessons.filter(id => id !== lesson.id);
+                                                setEditForm({...editForm, unlockedLessons: newUnlocked});
+                                              }}
+                                              className="peer h-4 w-4 shrink-0 rounded-sm border border-primary/50 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none checked:bg-primary checked:border-primary transition-all cursor-pointer"
+                                            />
+                                            {isUnlocked && <CheckCircle2 className="w-3 h-3 absolute text-white pointer-events-none" />}
+                                          </div>
+                                          <label htmlFor={`lesson-${lesson.id}`} className="text-xs text-white/70 group-hover:text-white transition-colors cursor-pointer select-none">
+                                            Module {lesson.order}: {lesson.title}
+                                          </label>
+                                        </div>
+                                      )
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4 relative z-10">

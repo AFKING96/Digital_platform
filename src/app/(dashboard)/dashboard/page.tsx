@@ -22,6 +22,7 @@ interface UserData {
   streak?: number;
   completedLessons?: number[];
   enrolledSubjects?: string[];
+  unlockedLessons?: number[];
 }
 
 interface Subject {
@@ -37,7 +38,6 @@ interface Lesson {
   order: number;
   title: string;
   summary: string[];
-  isUnlocked?: boolean;
 }
 
 export default function DashboardPage() {
@@ -165,11 +165,16 @@ export default function DashboardPage() {
   }
 
   // Guard: currentLesson may be missing from Firestore — default to 1
-  const currentLesson = userData?.currentLesson ?? 1;
+  const currentLesson = (userData?.unlockedLessons?.length ?? 0) > 0 
+    ? userData!.unlockedLessons![userData!.unlockedLessons!.length - 1] 
+    : (userData?.currentLesson ?? 1);
   const currentLessonIdx = lessons.findIndex(l => l.id === currentLesson);
   const currentLessonDisplayNumber = currentLessonIdx !== -1 ? currentLessonIdx + 1 : (lessons.length > 0 ? 1 : currentLesson);
   
   const currentLessonData = lessons.find(l => l.id === currentLesson);
+  const isHeroUnlocked = currentLessonData 
+    ? (userData?.unlockedLessons ? userData.unlockedLessons.includes(currentLesson) : false) 
+    : false;
   const currentLessonTitle = currentLessonData?.title 
     ? `Module ${currentLessonDisplayNumber}: ${currentLessonData.title}` 
     : `Module ${currentLessonDisplayNumber}`;
@@ -280,8 +285,8 @@ export default function DashboardPage() {
           </div>
           
           <div className="relative z-10 flex flex-col items-center gap-6">
-            <div className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-semibold ${currentLessonData?.isUnlocked === false ? "border-amber-500/30 bg-amber-500/10 text-amber-500" : "border-primary/30 bg-primary/10 text-primary"}`}>
-              {currentLessonData?.isUnlocked === false ? <Lock className="w-3 h-3 mr-2" /> : null}
+            <div className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-semibold ${!isHeroUnlocked ? "border-amber-500/30 bg-amber-500/10 text-amber-500" : "border-primary/30 bg-primary/10 text-primary"}`}>
+              {!isHeroUnlocked ? <Lock className="w-3 h-3 mr-2" /> : null}
               Current Lesson
             </div>
             <h2 className="text-4xl md:text-5xl font-bold text-white">{currentLessonTitle}</h2>
@@ -290,23 +295,23 @@ export default function DashboardPage() {
             </p>
             
             <div className="flex flex-wrap justify-center gap-4 mt-4">
-              <Link href={`/materials`} className={currentLessonData?.isUnlocked === false ? "pointer-events-none opacity-50" : ""}>
-                <Button variant="outline" className="border-white/10 hover:bg-white/5 h-14 px-6 rounded-2xl flex items-center gap-2 group" disabled={currentLessonData?.isUnlocked === false}>
+              <Link href={`/materials`} className={!isHeroUnlocked ? "pointer-events-none opacity-50" : ""}>
+                <Button variant="outline" className="border-white/10 hover:bg-white/5 h-14 px-6 rounded-2xl flex items-center gap-2 group" disabled={!isHeroUnlocked}>
                   <BookOpen className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
                   Materials
                 </Button>
               </Link>
-              <Link href={`/practice/${currentLesson}`} className={currentLessonData?.isUnlocked === false ? "pointer-events-none" : ""}>
+              <Link href={`/practice/${currentLesson}`} className={!isHeroUnlocked ? "pointer-events-none" : ""}>
                 <Button 
-                  className={`${currentLessonData?.isUnlocked === false ? "bg-white/10 text-white/40 cursor-not-allowed" : "bg-primary hover:bg-primary/90 text-white shadow-[0_0_30px_rgba(var(--primary),0.3)] hover:scale-105"} h-14 px-8 rounded-2xl flex items-center gap-2 transition-all`}
-                  disabled={currentLessonData?.isUnlocked === false}
+                  className={`${!isHeroUnlocked ? "bg-white/10 text-white/40 cursor-not-allowed" : "bg-primary hover:bg-primary/90 text-white shadow-[0_0_30px_rgba(var(--primary),0.3)] hover:scale-105"} h-14 px-8 rounded-2xl flex items-center gap-2 transition-all`}
+                  disabled={!isHeroUnlocked}
                 >
-                  {currentLessonData?.isUnlocked === false ? <Lock className="w-5 h-5" /> : <Target className="w-5 h-5" />}
-                  {currentLessonData?.isUnlocked === false ? "Locked" : "Start Practice"}
+                  {!isHeroUnlocked ? <Lock className="w-5 h-5" /> : <Target className="w-5 h-5" />}
+                  {!isHeroUnlocked ? "Locked" : "Start Practice"}
                 </Button>
               </Link>
-              <Link href={`/homework/${currentLesson}`} className={currentLessonData?.isUnlocked === false ? "pointer-events-none opacity-50" : ""}>
-                <Button variant="outline" className="border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 h-14 px-6 rounded-2xl flex items-center gap-2 group" disabled={currentLessonData?.isUnlocked === false}>
+              <Link href={`/homework/${currentLesson}`} className={!isHeroUnlocked ? "pointer-events-none opacity-50" : ""}>
+                <Button variant="outline" className="border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 h-14 px-6 rounded-2xl flex items-center gap-2 group" disabled={!isHeroUnlocked}>
                   <ClipboardList className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
                   Homework
                 </Button>
@@ -393,7 +398,9 @@ export default function DashboardPage() {
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {lessons.map((lesson, idx) => {
-            const isUnlocked = lesson.isUnlocked ?? false;
+            const isUnlocked = userData?.unlockedLessons 
+              ? userData.unlockedLessons.includes(lesson.id) 
+              : false;
             
             return (
               <motion.div key={lesson.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * idx }}>

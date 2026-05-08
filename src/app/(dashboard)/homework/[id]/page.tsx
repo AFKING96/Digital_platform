@@ -60,22 +60,32 @@ export default function HomeworkSolverPage() {
       if (lessonDoc.exists()) {
         const lessonData = lessonDoc.data();
         
-        // 1. Check Unlock Status
-        if (lessonData.isUnlocked === false) {
-          setIsLocked(true);
-          setLoading(false);
-          return;
-        }
-
-        // 2. Check Subject Enrollment
-        if (lessonData.subjectId && user) {
+        let isUnlocked = false;
+        
+        if (user) {
           const userDoc = await getDoc(doc(db, "users", user.uid));
-          const enrolled = userDoc.data()?.enrolledSubjects || [];
-          if (!enrolled.includes(lessonData.subjectId)) {
+          const userData = userDoc.data();
+          
+          if (userData?.unlockedLessons) {
+             isUnlocked = userData.unlockedLessons.includes(lessonData.id);
+          }
+          
+          if (!isUnlocked) {
             setIsLocked(true);
             setLoading(false);
             return;
           }
+          
+          const enrolled = userData?.enrolledSubjects || [];
+          if (lessonData.subjectId && !enrolled.includes(lessonData.subjectId)) {
+            setIsLocked(true);
+            setLoading(false);
+            return;
+          }
+        } else if (!isUnlocked) {
+          setIsLocked(true);
+          setLoading(false);
+          return;
         }
       }
 

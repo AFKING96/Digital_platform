@@ -28,7 +28,6 @@ interface Material {
 
 interface Lesson {
   id: number;
-  isUnlocked?: boolean;
 }
 
 const getFormat = (type: string | undefined | null): FormatFileProps => {
@@ -53,7 +52,7 @@ export default function MaterialsStudentPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCol, setSelectedCol] = useState<string | "all">("all");
   const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [enrolledSubjects, setEnrolledSubjects] = useState<string[]>([]);
+  const [userData, setUserData] = useState<any>(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -61,7 +60,7 @@ export default function MaterialsStudentPage() {
       if (auth.currentUser) {
         const userDoc = await getDocs(query(collection(db, "users"), where("__name__", "==", auth.currentUser.uid)));
         if (!userDoc.empty) {
-          setEnrolledSubjects(userDoc.docs[0].data().enrolledSubjects || []);
+          setUserData(userDoc.docs[0].data());
         }
       }
     };
@@ -93,15 +92,20 @@ export default function MaterialsStudentPage() {
     // Check if lesson is locked
     if (m.lessonId) {
       const lesson = lessons.find(l => l.id === m.lessonId);
-      if (lesson && lesson.isUnlocked === false) return false;
+      if (lesson) {
+        const isUnlocked = userData?.unlockedLessons 
+          ? userData.unlockedLessons.includes(lesson.id) 
+          : false;
+        if (!isUnlocked) return false;
+      }
       
       // Check subject enrollment if lesson has subjectId
       if (lesson && (lesson as any).subjectId) {
-        if (!enrolledSubjects.includes((lesson as any).subjectId)) return false;
+        if (!userData?.enrolledSubjects?.includes((lesson as any).subjectId)) return false;
       }
     } else if ((m as any).subjectId) {
       // Direct subject material
-      if (!enrolledSubjects.includes((m as any).subjectId)) return false;
+      if (!userData?.enrolledSubjects?.includes((m as any).subjectId)) return false;
     }
     
     const matchesSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase());
