@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, ArrowRight, Check, ExternalLink } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ExternalLink, Lock } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -42,6 +42,7 @@ export default function SolvePage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [displayNumber, setDisplayNumber] = useState<number | null>(null);
+  const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
     if (!params.id) return;
@@ -60,12 +61,16 @@ export default function SolvePage() {
       setLoading(false);
     });
 
-    // 2. Fetch lesson order (usually doesn't change during session, but good to have)
+    // 2. Fetch lesson order and check lock status
     const fetchLesson = async () => {
       const q = query(collection(db, "lessons"), where("id", "==", Number(params.id)));
       const snap = await getDocs(q);
       if (!snap.empty) {
-        setDisplayNumber((snap.docs[0].data() as any).order);
+        const lData = snap.docs[0].data() as any;
+        setDisplayNumber(lData.order);
+        if (lData.isUnlocked === false) {
+          setIsLocked(true);
+        }
       }
     };
     fetchLesson();
@@ -241,6 +246,22 @@ export default function SolvePage() {
             ))}
           </div>
         </Card>
+      </div>
+    );
+  }
+
+  if (isLocked) {
+    return (
+      <div className="h-[80vh] flex flex-col items-center justify-center text-center p-8 max-w-lg mx-auto">
+        <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+          <Lock className="w-10 h-10 text-muted-foreground" />
+        </div>
+        <h2 className="text-3xl font-bold mb-4">Quiz Locked</h2>
+        <p className="text-muted-foreground mb-8">This assessment is part of a module that hasn&apos;t been unlocked by your instructor yet.</p>
+        <Button onClick={() => router.push('/dashboard')} variant="outline" className="w-full h-12 rounded-xl">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Dashboard
+        </Button>
       </div>
     );
   }

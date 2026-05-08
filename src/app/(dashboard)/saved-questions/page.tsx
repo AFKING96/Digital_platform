@@ -35,6 +35,16 @@ export default function SavedQuestionsPage() {
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (!userDoc.exists()) return setLoading(false);
         
+        const enrolledSubjects = userDoc.data().enrolledSubjects || [];
+        
+        // Fetch all lessons to check subjectId
+        const lSnap = await getDocs(collection(db, "lessons"));
+        const lessonInfo: Record<number, { subjectId?: string }> = {};
+        lSnap.docs.forEach(d => {
+          const data = d.data();
+          lessonInfo[data.id] = { subjectId: data.subjectId };
+        });
+
         const savedIds = userDoc.data().savedQuestions || [];
         if (savedIds.length === 0) {
           setQuestions([]);
@@ -45,13 +55,21 @@ export default function SavedQuestionsPage() {
         const pSnap = await getDocs(collection(db, "practice_questions"));
         const pData = pSnap.docs
           .filter(d => savedIds.includes(d.id))
-          .map(d => ({ id: d.id, ...d.data(), category: "practice" } as SavedQuestion));
+          .map(d => ({ id: d.id, ...d.data(), category: "practice" } as SavedQuestion))
+          .filter(q => {
+            const info = lessonInfo[q.lessonId];
+            return info?.subjectId && enrolledSubjects.includes(info.subjectId);
+          });
 
         // Fetch from homework_questions
         const hSnap = await getDocs(collection(db, "homework_questions"));
         const hData = hSnap.docs
           .filter(d => savedIds.includes(d.id))
-          .map(d => ({ id: d.id, ...d.data(), category: "homework" } as SavedQuestion));
+          .map(d => ({ id: d.id, ...d.data(), category: "homework" } as SavedQuestion))
+          .filter(q => {
+            const info = lessonInfo[q.lessonId];
+            return info?.subjectId && enrolledSubjects.includes(info.subjectId);
+          });
 
         setQuestions([...pData, ...hData]);
       } catch (e) {

@@ -19,7 +19,8 @@ import {
   Trophy,
   ArrowRight,
   AlertCircle,
-  Info
+  Info,
+  Lock
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -48,18 +49,44 @@ export default function HomeworkSolverPage() {
   const [submitted, setSubmitted] = useState<Record<string, boolean>>({});
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
       if (!params.id) return;
       
+      // Check if lesson is unlocked and subject is enrolled
+      const lessonDoc = await getDoc(doc(db, "lessons", params.id as string));
+      if (lessonDoc.exists()) {
+        const lessonData = lessonDoc.data();
+        
+        // 1. Check Unlock Status
+        if (lessonData.isUnlocked === false) {
+          setIsLocked(true);
+          setLoading(false);
+          return;
+        }
+
+        // 2. Check Subject Enrollment
+        if (lessonData.subjectId && user) {
+          const userDoc = await getDoc(doc(db, "users", user.uid));
+          const enrolled = userDoc.data()?.enrolledSubjects || [];
+          if (!enrolled.includes(lessonData.subjectId)) {
+            setIsLocked(true);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       // Fetch Homework Questions
       const hSnap = await getDocs(query(
         collection(db, "homework_questions"), 
-        where("lessonId", "==", Number(params.id)),
-        orderBy("order", "asc")
+        where("lessonId", "==", Number(params.id))
       ));
       const hData = hSnap.docs.map(d => ({ id: d.id, ...d.data() } as Homework));
+      // Client-side sort to avoid index requirements
+      hData.sort((a, b) => ((a as any).order || 0) - ((b as any).order || 0));
       setQuestions(hData);
 
       // Fetch Saved Questions
@@ -130,7 +157,23 @@ export default function HomeworkSolverPage() {
     } catch (e) { console.error(e); }
   };
 
-  if (loading) return <div className="p-8"><Skeleton className="h-96 w-full bg-white/5" /></div>;
+  if (loading) return <div className="p-8 max-w-4xl mx-auto"><Skeleton className="h-[500px] w-full bg-white/5 rounded-[40px]" /></div>;
+
+  if (isLocked) {
+    return (
+      <div className="h-[80vh] flex flex-col items-center justify-center text-center p-8 max-w-lg mx-auto">
+        <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+          <Lock className="w-10 h-10 text-muted-foreground" />
+        </div>
+        <h2 className="text-3xl font-bold mb-4">Homework Locked</h2>
+        <p className="text-muted-foreground mb-8">This assignment is part of a module that hasn&apos;t been unlocked by your instructor yet.</p>
+        <Button onClick={() => router.push('/dashboard')} variant="outline" className="w-full h-12 rounded-xl">
+          <ChevronLeft className="w-4 h-4 mr-2" />
+          Back to Dashboard
+        </Button>
+      </div>
+    );
+  }
 
   if (questions.length === 0) {
     return (

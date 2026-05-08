@@ -6,7 +6,7 @@ import { db } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Folder, File, ExternalLink, BookOpen, Search, ChevronRight, Layout, Download } from "lucide-react";
+import { Folder, File, ExternalLink, BookOpen, Search, ChevronRight, Layout, Download, Lock } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,11 @@ interface Material {
   collectionId: string;
   fileType?: string;
   lessonId?: number | null;
+}
+
+interface Lesson {
+  id: number;
+  isUnlocked?: boolean;
 }
 
 const getFormat = (type: string | undefined | null): FormatFileProps => {
@@ -47,8 +52,20 @@ export default function MaterialsStudentPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCol, setSelectedCol] = useState<string | "all">("all");
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [enrolledSubjects, setEnrolledSubjects] = useState<string[]>([]);
 
   useEffect(() => {
+    const fetchUser = async () => {
+      const { auth } = await import("@/lib/firebase");
+      if (auth.currentUser) {
+        const userDoc = await getDocs(query(collection(db, "users"), where("__name__", "==", auth.currentUser.uid)));
+        if (!userDoc.empty) {
+          setEnrolledSubjects(userDoc.docs[0].data().enrolledSubjects || []);
+        }
+      }
+    };
+    fetchUser();
     // Fetch Collections
     const unsubCol = onSnapshot(query(collection(db, "material_collections"), orderBy("createdAt", "desc")), (snap) => {
       setCollections(snap.docs.map(d => ({ id: d.id, ...d.data() } as MaterialCollection)));
@@ -60,13 +77,33 @@ export default function MaterialsStudentPage() {
       setLoading(false);
     });
 
+    // Fetch Lessons
+    const unsubLessons = onSnapshot(collection(db, "lessons"), (snap) => {
+      setLessons(snap.docs.map(d => d.data() as Lesson));
+    });
+
     return () => {
       unsubCol();
       unsubMat();
+      unsubLessons();
     };
   }, []);
 
   const filteredMaterials = materials.filter(m => {
+    // Check if lesson is locked
+    if (m.lessonId) {
+      const lesson = lessons.find(l => l.id === m.lessonId);
+      if (lesson && lesson.isUnlocked === false) return false;
+      
+      // Check subject enrollment if lesson has subjectId
+      if (lesson && (lesson as any).subjectId) {
+        if (!enrolledSubjects.includes((lesson as any).subjectId)) return false;
+      }
+    } else if ((m as any).subjectId) {
+      // Direct subject material
+      if (!enrolledSubjects.includes((m as any).subjectId)) return false;
+    }
+    
     const matchesSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCol = selectedCol === "all" || m.collectionId === selectedCol;
     return matchesSearch && matchesCol;

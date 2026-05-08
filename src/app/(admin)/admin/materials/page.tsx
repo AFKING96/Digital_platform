@@ -49,6 +49,12 @@ interface Material {
   lessonId?: number | null;
   fileType?: string;
   createdAt: any;
+  subjectId?: string;
+}
+
+interface Subject {
+  id: string;
+  name: string;
 }
 
 interface Lesson {
@@ -75,10 +81,44 @@ export default function MaterialsPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string, type: 'collection' | 'material' } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
+
+  useEffect(() => {
+    const unsub = onSnapshot(query(collection(db, "subjects"), orderBy("name", "asc")), (snap) => {
+      const sData = snap.docs.map(d => ({ id: d.id, name: d.data().name }));
+      setSubjects(sData);
+      if (sData.length > 0 && !selectedSubjectId) {
+        setSelectedSubjectId(sData[0].id);
+      }
+    });
+    return () => unsub();
+  }, []);
+
   useEffect(() => {
     // Fetch Collections
-    const unsubCollections = onSnapshot(query(collection(db, "material_collections"), orderBy("createdAt", "desc")), (snap) => {
-      setCollections(snap.docs.map(d => ({ id: d.id, ...d.data() } as MaterialCollection)));
+    let qCol;
+    if (selectedSubjectId) {
+      // Query with subjectId filter (remove orderBy to avoid index requirement)
+      qCol = query(collection(db, "material_collections"), where("subjectId", "==", selectedSubjectId));
+    } else {
+      qCol = query(collection(db, "material_collections"), orderBy("createdAt", "desc"));
+    }
+
+    const unsubCollections = onSnapshot(qCol, (snap) => {
+      let data = snap.docs.map(d => ({ id: d.id, ...d.data() } as MaterialCollection));
+      
+      // Client-side sort if filtered by subject (since we removed orderBy)
+      if (selectedSubjectId) {
+        data.sort((a, b) => {
+          const tA = a.createdAt?.seconds || 0;
+          const tB = b.createdAt?.seconds || 0;
+          return tB - tA;
+        });
+      }
+      
+      // If legacy view, only show those without subjectId
+      setCollections(selectedSubjectId ? data : data.filter(c => !(c as any).subjectId));
     });
 
     // Fetch Materials
@@ -87,8 +127,28 @@ export default function MaterialsPage() {
     });
 
     // Fetch Lessons
-    const unsubLessons = onSnapshot(query(collection(db, "lessons"), orderBy("order", "asc")), (snap) => {
-      setLessons(snap.docs.map(d => ({ id: d.data().id, title: d.data().title })));
+    let qLessons;
+    if (selectedSubjectId) {
+      // Remove orderBy to avoid index
+      qLessons = query(collection(db, "lessons"), where("subjectId", "==", selectedSubjectId));
+    } else {
+      qLessons = query(collection(db, "lessons"), orderBy("order", "asc"));
+    }
+
+    const unsubLessons = onSnapshot(qLessons, (snap) => {
+      let data = snap.docs.map(d => ({ 
+        id: d.data().id, 
+        title: d.data().title, 
+        subjectId: d.data().subjectId,
+        order: d.data().order || 0 
+      }));
+      
+      // Client-side sort
+      if (selectedSubjectId) {
+        data.sort((a, b) => a.order - b.order);
+      }
+
+      setLessons(selectedSubjectId ? data : data.filter(l => !l.subjectId));
       setLoading(false);
     });
 
@@ -97,7 +157,7 @@ export default function MaterialsPage() {
       unsubMaterials();
       unsubLessons();
     };
-  }, []);
+  }, [selectedSubjectId]);
 
   const handleCreateCollection = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +166,8 @@ export default function MaterialsPage() {
       const id = Date.now().toString();
       await setDoc(doc(db, "material_collections", id), {
         name: newCollectionName,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        subjectId: selectedSubjectId
       });
       setNewCollectionName("");
       setIsAddingCollection(false);
@@ -155,7 +216,8 @@ export default function MaterialsPage() {
         collectionId: selectedCollectionId,
         lessonId: materialForm.lessonId ? Number(materialForm.lessonId) : null,
         fileType: fileExt,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        subjectId: selectedSubjectId
       });
 
       setIsAddingMaterial(false);
@@ -209,11 +271,23 @@ export default function MaterialsPage() {
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="space-y-1">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
             Educational Materials
           </h1>
-          <p className="text-muted-foreground mt-1">Organize your study resources into collections and modules.</p>
+          <div className="flex items-center gap-3">
+            <p className="text-muted-foreground">Organize resources for</p>
+            <select 
+              className="bg-black/40 border border-white/10 rounded-lg px-3 py-1 text-sm font-bold text-primary focus:outline-none focus:border-primary/50"
+              value={selectedSubjectId}
+              onChange={(e) => setSelectedSubjectId(e.target.value)}
+            >
+              {subjects.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+              <option value="">Legacy / All</option>
+            </select>
+          </div>
         </div>
         <Button onClick={() => setIsAddingCollection(true)} className="bg-primary hover:bg-primary/90">
           <Plus className="w-4 h-4 mr-2" /> New Collection

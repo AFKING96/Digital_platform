@@ -40,9 +40,27 @@ export default function FinancePage() {
   const [deleteLogId, setDeleteLogId] = useState<string | null>(null);
   const [isDeletingLog, setIsDeletingLog] = useState(false);
   const [loadingLogs, setLoadingLogs] = useState(true);
+  
+  const [subjects, setSubjects] = useState<{id: string, name: string}[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, "users"), where("role", "==", "student"));
+    setIsMounted(true);
+    const unsub = onSnapshot(query(collection(db, "subjects"), fireOrderBy("name", "asc")), (snap) => {
+      setSubjects(snap.docs.map(d => ({ id: d.id, name: d.data().name })));
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    let q;
+    if (selectedSubjectId) {
+      q = query(collection(db, "users"), where("role", "==", "student"), where("enrolledSubjects", "array-contains", selectedSubjectId));
+    } else {
+      q = query(collection(db, "users"), where("role", "==", "student"));
+    }
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: StudentFinance[] = [];
       snapshot.forEach((doc) => {
@@ -56,9 +74,26 @@ export default function FinancePage() {
       setStudents(data);
     });
 
-    const qLogs = query(collection(db, "payment_logs"), fireOrderBy("date", "desc"));
+    let qLogs;
+    if (selectedSubjectId) {
+      // Remove fireOrderBy to avoid index
+      qLogs = query(collection(db, "payment_logs"), where("subjectId", "==", selectedSubjectId));
+    } else {
+      qLogs = query(collection(db, "payment_logs"), fireOrderBy("date", "desc"));
+    }
+
     const unsubscribeLogs = onSnapshot(qLogs, (snapshot) => {
-      const logs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      let logs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      
+      // Client-side sort
+      if (selectedSubjectId) {
+        logs.sort((a: any, b: any) => {
+          const tA = a.date?.seconds || 0;
+          const tB = b.date?.seconds || 0;
+          return tB - tA;
+        });
+      }
+
       setPaymentLogs(logs);
       setLoadingLogs(false);
     });
@@ -67,7 +102,7 @@ export default function FinancePage() {
       unsubscribe();
       unsubscribeLogs();
     };
-  }, []);
+  }, [selectedSubjectId]);
 
   const handleDeleteLog = async () => {
     if (!deleteLogId) return;
@@ -133,9 +168,23 @@ export default function FinancePage() {
 
   return (
     <div className="space-y-6 max-w-6xl pb-10">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Financial Dashboard</h1>
-        <p className="text-muted-foreground">Real-time revenue tracking and student balances.</p>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Financial Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <p className="text-muted-foreground">Tracking revenue for</p>
+            <select 
+              className="bg-black/40 border border-white/10 rounded-lg px-3 py-1 text-sm font-bold text-primary focus:outline-none focus:border-primary/50"
+              value={selectedSubjectId}
+              onChange={(e) => setSelectedSubjectId(e.target.value)}
+            >
+              <option value="">All Students</option>
+              {subjects.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="grid md:grid-cols-3 gap-6">
@@ -167,7 +216,7 @@ export default function FinancePage() {
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
           <Card className="glass-card p-4 h-40 flex items-center justify-center relative overflow-hidden group hover:scale-[1.02] transition-transform">
-             {totalPaid > 0 || totalRemaining > 0 ? (
+             {(totalPaid > 0 || totalRemaining > 0) && isMounted ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie

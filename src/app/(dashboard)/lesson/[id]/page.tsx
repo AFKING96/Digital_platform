@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, PlayCircle, BookOpen, StickyNote } from "lucide-react";
+import { ArrowLeft, PlayCircle, BookOpen, StickyNote, Lock } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -15,6 +15,7 @@ interface Lesson {
   id: number;
   title: string;
   summary: string[];
+  isUnlocked?: boolean;
 }
 
 export default function LessonPage() {
@@ -70,11 +71,15 @@ export default function LessonPage() {
     );
   }
 
-  if (!lesson) {
+  if (!lesson || lesson.isUnlocked === false) {
     return (
-      <div className="text-center py-20">
-        <h2 className="text-2xl font-bold mb-4">Lesson not found</h2>
-        <Button onClick={() => router.push('/dashboard')} variant="outline">
+      <div className="text-center py-20 px-6 max-w-lg mx-auto flex flex-col items-center">
+        <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+          <Lock className="w-10 h-10 text-muted-foreground" />
+        </div>
+        <h2 className="text-3xl font-bold mb-4">This lesson is not available yet</h2>
+        <p className="text-muted-foreground mb-8">Your instructor hasn't unlocked this module for you. Please check back later or contact your instructor.</p>
+        <Button onClick={() => router.push('/dashboard')} variant="outline" className="w-full h-12 rounded-xl">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Dashboard
         </Button>

@@ -23,6 +23,7 @@ interface Lesson {
   id: number;
   title: string;
   order: number;
+  isUnlocked?: boolean;
 }
 
 export default function HomeworkLandingPage() {
@@ -35,7 +36,12 @@ export default function HomeworkLandingPage() {
   useEffect(() => {
     // Fetch Lessons
     const unsubLessons = onSnapshot(query(collection(db, "lessons"), orderBy("order", "asc")), (snap) => {
-      setLessons(snap.docs.map(d => ({ id: d.data().id, title: d.data().title, order: d.data().order })));
+      setLessons(snap.docs.map(d => ({ 
+        id: d.data().id, 
+        title: d.data().title, 
+        order: d.data().order,
+        isUnlocked: d.data().isUnlocked 
+      })));
     });
 
     // Fetch All Homework
@@ -74,7 +80,7 @@ export default function HomeworkLandingPage() {
       </div>
 
       <div className="grid gap-6">
-        {lessons.map((lesson, idx) => {
+        {lessons.filter(l => l.isUnlocked !== false).map((lesson, idx) => {
           const lessonHomeworks = homeworks.filter(h => h.lessonId === lesson.id);
           const solvedCount = lessonHomeworks.filter(h => submissions.includes(h.id)).length;
           const totalCount = lessonHomeworks.length;
@@ -164,7 +170,7 @@ export default function HomeworkLandingPage() {
         })}
       </div>
 
-      {lessons.filter(l => homeworks.some(h => h.lessonId === l.id)).length === 0 && (
+      {lessons.filter(l => l.isUnlocked !== false && homeworks.some(h => h.lessonId === l.id)).length === 0 && (
         <div className="text-center py-32 border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.02]">
           <ClipboardList className="w-20 h-20 text-white/5 mx-auto mb-6" />
           <h2 className="text-2xl font-bold">No Homework Yet</h2>

@@ -1,19 +1,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, getDocs, orderBy, writeBatch, arrayRemove, deleteField, arrayUnion } from "firebase/firestore";
 import { createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
-import { initializeApp, getApp, getApps, deleteApp } from "firebase/app";
+import { initializeApp, deleteApp } from "firebase/app";
 import { db, auth, firebaseConfig } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus, Save, User as UserIcon, BookOpen, Target, CheckCircle2, DollarSign, Upload, Trash2 } from "lucide-react";
+import { Search, Plus, Save, User as UserIcon, BookOpen, Target, CheckCircle2, DollarSign, Upload, Trash2, Layout, CreditCard, Activity, ChevronRight, Mail, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { writeBatch, arrayRemove, deleteField } from "firebase/firestore";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 interface Student {
   id: string;
@@ -24,6 +27,7 @@ interface Student {
   accuracy: number;
   paid: number;
   remaining: number;
+  enrolledSubjects?: string[];
 }
 
 export default function StudentsPage() {
@@ -36,9 +40,17 @@ export default function StudentsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   
   // Forms
-  const [addForm, setAddForm] = useState({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1 });
+  const [addForm, setAddForm] = useState({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1, initialSubject: "" });
   const [editForm, setEditForm] = useState({ currentLesson: 1, paid: 0, remaining: 0 });
   const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
+  const [allSubjects, setAllSubjects] = useState<{id: string, name: string}[]>([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "subjects"), (snap) => {
+      setAllSubjects(snap.docs.map(d => ({ id: d.id, name: d.data().name })));
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     // 1. Fetch lesson mapping
@@ -88,14 +100,15 @@ export default function StudentsPage() {
         solvedQuestions: 0,
         accuracy: 0,
         paid: Number(addForm.paid),
-        remaining: 0
+        remaining: 0,
+        enrolledSubjects: addForm.initialSubject ? [addForm.initialSubject] : []
       });
 
       await signOut(secondaryAuth);
       await deleteApp(secondaryApp);
       
       setIsAddOpen(false);
-      setAddForm({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1 });
+      setAddForm({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1, initialSubject: "" });
     } catch (error) {
       console.error("Error creating student:", error);
       alert("Error creating student. See console.");
@@ -168,6 +181,16 @@ export default function StudentsPage() {
       setSelectedStudent(null);
     } catch (error) {
       console.error("Error updating student:", error);
+    }
+  };
+
+  const toggleSubject = async (studentId: string, subjectId: string, isEnrolled: boolean) => {
+    try {
+      await updateDoc(doc(db, "users", studentId), {
+        enrolledSubjects: isEnrolled ? arrayRemove(subjectId) : arrayUnion(subjectId)
+      });
+    } catch (error) {
+      console.error("Error toggling subject:", error);
     }
   };
   
@@ -277,6 +300,23 @@ export default function StudentsPage() {
                   <Input placeholder="Paid Amount" type="number" value={addForm.paid} onChange={e => setAddForm({...addForm, paid: Number(e.target.value)})} className="bg-black/30 border-white/10" />
                 </div>
               </div>
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground uppercase">Initial Subject Enrollment</label>
+                <Select 
+                  value={addForm.initialSubject} 
+                  onValueChange={(val: string | null) => setAddForm({...addForm, initialSubject: val || ""})}
+                >
+                  <SelectTrigger className="w-full bg-black/30 border-white/10 text-white">
+                    <SelectValue placeholder="Select a subject (Optional)" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0B1220] border-white/10 text-white">
+                    <SelectItem value="none">None</SelectItem>
+                    {allSubjects.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button type="submit" className="w-full bg-primary hover:bg-primary/90">Create Account</Button>
             </form>
           </DialogContent>
@@ -348,6 +388,10 @@ export default function StudentsPage() {
                     <DollarSign className="w-4 h-4 text-yellow-400" />
                     <span>${student.paid || 0} Paid</span>
                   </div>
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Layout className="w-4 h-4 text-violet-400" />
+                    <span>{student.enrolledSubjects?.length || 0} Subjects</span>
+                  </div>
                 </div>
               </Card>
             </motion.div>
@@ -356,66 +400,223 @@ export default function StudentsPage() {
       </div>
 
       <Sheet open={!!selectedStudent} onOpenChange={(open) => !open && setSelectedStudent(null)}>
-        <SheetContent className="bg-[#040810]/95 backdrop-blur-xl border-l-white/10 text-white min-w-[400px]">
-          <SheetHeader className="mb-6">
-            <SheetTitle className="text-2xl text-white">Student Details</SheetTitle>
-            <SheetDescription>
-              View performance and update administrative records for {selectedStudent?.name}.
-            </SheetDescription>
-          </SheetHeader>
-
-          {selectedStudent && (
-            <div className="space-y-8">
-              {/* Performance Stats */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Performance Stats</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                    <div className="text-2xl font-bold text-white">{selectedStudent.accuracy}%</div>
-                    <div className="text-xs text-muted-foreground mt-1">Accuracy</div>
+        <SheetContent className="bg-[#040810]/95 backdrop-blur-2xl border-l-white/10 text-white min-w-[450px] p-0 overflow-hidden flex flex-col">
+          {(() => {
+            const currentStudent = students.find(s => s.id === selectedStudent?.id);
+            if (!currentStudent) return null;
+            
+            return (
+              <>
+                <div className="relative h-32 bg-gradient-to-br from-primary/20 to-blue-500/10 p-6 flex items-end">
+                  <div className="absolute top-4 right-4 flex gap-2">
+                    <Badge variant="outline" className="bg-black/50 border-white/10 backdrop-blur-md">
+                      Student ID: {currentStudent.id.slice(0, 8)}
+                    </Badge>
                   </div>
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                    <div className="text-2xl font-bold text-white">{selectedStudent.solvedQuestions}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Questions Solved</div>
+                  <div className="flex items-center gap-4 relative z-10 translate-y-8">
+                    <div className="w-20 h-20 rounded-[24px] bg-[#0B1220] border-4 border-[#040810] shadow-2xl flex items-center justify-center text-primary text-3xl font-black">
+                      {currentStudent.name.charAt(0)}
+                    </div>
+                    <div className="pb-2">
+                      <h2 className="text-2xl font-black tracking-tight text-white">{currentStudent.name}</h2>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Mail className="w-3 h-3" /> {currentStudent.email}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Administrative Updates */}
-              <div className="space-y-4 pt-4 border-t border-white/10">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Update Records</h3>
-                
-                <div className="space-y-4 bg-black/20 p-4 rounded-xl border border-white/5">
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm text-muted-foreground">Module Progression</label>
-                    <select 
-                      className="bg-black/40 border border-white/10 rounded-md p-2 text-white" 
-                      value={editForm.currentLesson} 
-                      onChange={e => setEditForm({...editForm, currentLesson: Number(e.target.value)})}
-                    >
-                      {lessons.map((l) => (
-                        <option key={l.id} value={l.id}>Module {l.order}: {l.title}</option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm text-muted-foreground">Total Paid Amount ($)</label>
-                    <Input type="number" className="bg-black/40 border-white/10 text-green-400" value={editForm.paid} onChange={e => setEditForm({...editForm, paid: Number(e.target.value)})} />
-                  </div>
-                  
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm text-muted-foreground">Remaining Balance ($)</label>
-                    <Input type="number" className="bg-black/40 border-white/10 text-red-400" value={editForm.remaining} onChange={e => setEditForm({...editForm, remaining: Number(e.target.value)})} />
+                <div className="flex-1 overflow-y-auto p-6 pt-12 space-y-8 custom-scrollbar">
+                  {/* Performance Grid */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 group hover:border-primary/30 transition-all">
+                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                        <Target className="w-4 h-4 text-emerald-400" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Accuracy</span>
+                      </div>
+                      <div className="text-3xl font-black text-white group-hover:scale-105 transition-transform origin-left">
+                        {currentStudent.accuracy}%
+                      </div>
+                      <div className="h-1 w-full bg-white/5 rounded-full mt-3 overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${currentStudent.accuracy}%` }}
+                          className="h-full bg-emerald-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 group hover:border-primary/30 transition-all">
+                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                        <Activity className="w-4 h-4 text-blue-400" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Questions</span>
+                      </div>
+                      <div className="text-3xl font-black text-white group-hover:scale-105 transition-transform origin-left">
+                        {currentStudent.solvedQuestions}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-3">Total solved tasks</p>
+                    </div>
                   </div>
 
-                  <Button className="w-full mt-4 bg-primary hover:bg-primary/90" onClick={handleSave}>
-                    <Save className="w-4 h-4 mr-2" /> Save Changes
-                  </Button>
+                  {/* Financial Summary */}
+                  <div className="bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20 rounded-2xl p-6 space-y-4 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                      <CreditCard className="w-16 h-16 text-emerald-400" />
+                    </div>
+                    <div className="flex items-center justify-between relative z-10">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-bold text-white uppercase tracking-widest">Financial Status</span>
+                      </div>
+                      <Badge variant={currentStudent.remaining > 0 ? "destructive" : "secondary"} className={cn(
+                        "rounded-lg",
+                        currentStudent.remaining > 0 ? "bg-red-500/20 text-red-400" : "bg-emerald-500/20 text-emerald-400"
+                      )}>
+                        {currentStudent.remaining > 0 ? "Outstanding Balance" : "Account Clear"}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 relative z-10 pt-2">
+                      <div>
+                        <div className="text-3xl font-black text-emerald-400">${currentStudent.paid}</div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Total Paid</div>
+                      </div>
+                      <div>
+                        <div className={cn("text-3xl font-black", currentStudent.remaining > 0 ? "text-red-400" : "text-white/20")}>
+                          ${currentStudent.remaining}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Remaining</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator className="bg-white/5" />
+
+                  {/* Enrollment Controls */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Course Enrollment</h3>
+                      <span className="text-[10px] font-bold text-primary">{currentStudent.enrolledSubjects?.length || 0} Active</span>
+                    </div>
+
+                    {/* Quick Enroll Dropdown */}
+                    <div className="flex gap-2">
+                      <Select onValueChange={(val: string | null) => val && toggleSubject(currentStudent.id, val, false)}>
+                        <SelectTrigger className="flex-1 bg-white/5 border-white/10 rounded-xl h-10 text-xs">
+                          <SelectValue placeholder="Quick Enroll in Subject..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#0B1220] border-white/10 text-white backdrop-blur-xl">
+                          {allSubjects
+                            .filter(s => !currentStudent.enrolledSubjects?.includes(s.id))
+                            .map(s => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                            ))
+                          }
+                          {allSubjects.filter(s => !currentStudent.enrolledSubjects?.includes(s.id)).length === 0 && (
+                            <div className="p-2 text-xs text-muted-foreground text-center">All subjects enrolled</div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                      {allSubjects
+                        .filter(s => currentStudent.enrolledSubjects?.includes(s.id))
+                        .map((subject) => (
+                          <div 
+                            key={subject.id} 
+                            className="group flex items-center justify-between p-3 rounded-xl border bg-primary/5 border-primary/20 transition-all duration-300"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/20 text-primary transition-all">
+                                <BookOpen className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <div className="font-bold text-sm text-white">{subject.name}</div>
+                                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Access Active</div>
+                              </div>
+                            </div>
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              className="h-8 px-4 rounded-lg text-[10px] font-black uppercase tracking-wider text-red-400 hover:bg-red-400/10 transition-all"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSubject(currentStudent.id, subject.id, true);
+                              }}
+                            >
+                              Revoke
+                            </Button>
+                          </div>
+                        ))}
+                      {(!currentStudent.enrolledSubjects || currentStudent.enrolledSubjects.length === 0) && (
+                        <div className="flex flex-col items-center justify-center py-8 px-4 border border-dashed border-white/10 rounded-2xl bg-white/2">
+                          <BookOpen className="w-8 h-8 text-white/10 mb-2" />
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">No Active Enrollments</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Admin Actions */}
+                  <div className="space-y-4 pt-4">
+                    <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Administrative Updates</h3>
+                    <div className="bg-black/40 border border-white/10 rounded-2xl p-6 space-y-6 shadow-2xl relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2" />
+                      
+                      <div className="space-y-2 relative z-10">
+                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2 px-1">
+                          <Activity className="w-3 h-3 text-primary" /> Module Progression
+                        </label>
+                        <Select 
+                          value={editForm.currentLesson.toString()} 
+                          onValueChange={(val: string | null) => val && setEditForm({...editForm, currentLesson: Number(val)})}
+                        >
+                          <SelectTrigger className="w-full bg-[#0B1220] border-white/10 rounded-xl h-11 text-sm focus:ring-primary/50">
+                            <SelectValue placeholder="Select current module" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#0B1220] border-white/10 text-white backdrop-blur-xl">
+                            {lessons.map((l) => (
+                              <SelectItem key={l.id} value={l.id.toString()} className="focus:bg-primary/20 focus:text-primary">
+                                Module {l.order}: {l.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 relative z-10">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2 px-1">
+                            <DollarSign className="w-3 h-3 text-emerald-400" /> Paid Amount
+                          </label>
+                          <Input 
+                            type="number" 
+                            className="bg-[#0B1220] border-white/10 text-emerald-400 h-11 rounded-xl focus:border-emerald-500/50 transition-all" 
+                            value={editForm.paid} 
+                            onChange={e => setEditForm({...editForm, paid: Number(e.target.value)})} 
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2 px-1">
+                            <AlertTriangle className="w-3 h-3 text-red-400" /> Remaining
+                          </label>
+                          <Input 
+                            type="number" 
+                            className="bg-[#0B1220] border-white/10 text-red-400 h-11 rounded-xl focus:border-red-500/50 transition-all" 
+                            value={editForm.remaining} 
+                            onChange={e => setEditForm({...editForm, remaining: Number(e.target.value)})} 
+                          />
+                        </div>
+                      </div>
+
+                      <Button className="w-full h-12 bg-primary hover:bg-primary/90 rounded-xl font-bold shadow-[0_10px_20px_-10px_rgba(59,130,246,0.5)] hover:scale-[1.02] active:scale-[0.98] transition-all relative z-10" onClick={handleSave}>
+                        <Save className="w-4 h-4 mr-2" /> Commit Changes
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
+              </>
+            );
+          })()}
         </SheetContent>
       </Sheet>
 

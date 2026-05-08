@@ -48,6 +48,7 @@ export default function QuestionAnalyticsPage() {
   const [question, setQuestion] = useState<Question | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalEnrolled, setTotalEnrolled] = useState(0);
 
   useEffect(() => {
     async function fetchData() {
@@ -60,14 +61,38 @@ export default function QuestionAnalyticsPage() {
       }
       
       if (qDoc.exists()) {
-        setQuestion({ id: qDoc.id, ...qDoc.data() } as Question);
+        const qData = qDoc.data();
+        setQuestion({ id: qDoc.id, ...qData } as Question);
+
+        // Fetch Total Enrolled Students for this question's subject
+        try {
+          const lessonSnap = await getDocs(query(collection(db, "lessons"), where("id", "==", qData.lessonId)));
+          if (!lessonSnap.empty) {
+            const subjectId = lessonSnap.docs[0].data().subjectId;
+            if (subjectId) {
+              const enrolledSnap = await getDocs(query(collection(db, "users"), where("enrolledSubjects", "array-contains", subjectId)));
+              setTotalEnrolled(enrolledSnap.size);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching enrollment data:", error);
+        }
       }
 
       // Fetch Submissions for this question
       const unsub = onSnapshot(
-        query(collection(db, "submissions"), where("questionId", "==", params.id), orderBy("timestamp", "desc")),
+        query(collection(db, "submissions"), where("questionId", "==", params.id)),
         (snap) => {
-          setSubmissions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Submission)));
+          const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Submission));
+          
+          // Client-side sort
+          data.sort((a, b) => {
+            const tA = a.timestamp?.seconds || 0;
+            const tB = b.timestamp?.seconds || 0;
+            return tB - tA;
+          });
+
+          setSubmissions(data);
           setLoading(false);
         }
       );
@@ -91,6 +116,8 @@ export default function QuestionAnalyticsPage() {
   const incorrect = total - correct;
   const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
   const late = submissions.filter(s => s.isLate).length;
+  const unansweredCount = Math.max(0, totalEnrolled - total);
+  const unansweredPercent = totalEnrolled > 0 ? Math.round((unansweredCount / totalEnrolled) * 100) : 0;
 
   // Group by answer for MCQ
   const answerDist: Record<string, number> = {};
@@ -135,8 +162,8 @@ export default function QuestionAnalyticsPage() {
           {/* Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card className="p-6 bg-white/5 border-white/10 text-center space-y-1">
-              <div className="text-3xl font-black">{total}</div>
-              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Total Responses</div>
+              <div className="text-3xl font-black">{totalEnrolled}</div>
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Total Enrolled</div>
             </Card>
             <Card className="p-6 bg-white/5 border-white/10 text-center space-y-1">
               <div className="text-3xl font-black text-emerald-400">{accuracy}%</div>
@@ -147,8 +174,8 @@ export default function QuestionAnalyticsPage() {
               <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Failures</div>
             </Card>
             <Card className="p-6 bg-white/5 border-white/10 text-center space-y-1">
-              <div className="text-3xl font-black text-orange-400">{late}</div>
-              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Late Subs</div>
+              <div className="text-3xl font-black text-orange-400">{unansweredCount}</div>
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Not Answered</div>
             </Card>
           </div>
 

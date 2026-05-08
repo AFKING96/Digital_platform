@@ -25,8 +25,10 @@ export default function AdminDashboard() {
   });
 
   const [chartData, setChartData] = useState<any[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    setIsMounted(true);
     // Realtime listeners for Students
     const studentsQuery = query(collection(db, "users"), where("role", "==", "student"));
     const unsubscribeStudents = onSnapshot(studentsQuery, (snapshot) => {
@@ -224,41 +226,43 @@ export default function AdminDashboard() {
           </div>
           
           <div className="h-[350px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                <XAxis 
-                  dataKey="name" 
-                  stroke="#ffffff40" 
-                  fontSize={12} 
-                  tickLine={false} 
-                  axisLine={false}
-                />
-                <YAxis 
-                  stroke="#ffffff40" 
-                  fontSize={12} 
-                  tickLine={false} 
-                  axisLine={false}
-                  tickFormatter={(value) => `${value}%`}
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: "#0c1220", 
-                    borderColor: "#ffffff10",
-                    borderRadius: "12px",
-                    color: "#fff"
-                  }}
-                  itemStyle={{ color: "#3b82f6" }}
-                />
-                <Bar 
-                  dataKey="accuracy" 
-                  fill="#3b82f6" 
-                  radius={[6, 6, 0, 0]} 
-                  barSize={40}
-                  className="drop-shadow-[0_0_10px_rgba(59,130,246,0.3)]"
-                />
-              </BarChart>
-            </ResponsiveContainer>
+            {isMounted && (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="#ffffff40" 
+                    fontSize={12} 
+                    tickLine={false} 
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    stroke="#ffffff40" 
+                    fontSize={12} 
+                    tickLine={false} 
+                    axisLine={false}
+                    tickFormatter={(value) => `${value}%`}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: "#0c1220", 
+                      borderColor: "#ffffff10",
+                      borderRadius: "12px",
+                      color: "#fff"
+                    }}
+                    itemStyle={{ color: "#3b82f6" }}
+                  />
+                  <Bar 
+                    dataKey="accuracy" 
+                    fill="#3b82f6" 
+                    radius={[6, 6, 0, 0]} 
+                    barSize={40}
+                    className="drop-shadow-[0_0_10px_rgba(59,130,246,0.3)]"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </Card>
       </motion.div>

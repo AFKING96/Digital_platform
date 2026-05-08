@@ -138,6 +138,7 @@ export default function Home() {
                   </label>
                   <button 
                     type="button"
+                    suppressHydrationWarning
                     onClick={() => {
                       if (!identifier) {
                         setError("Please enter your ID/Email first.");

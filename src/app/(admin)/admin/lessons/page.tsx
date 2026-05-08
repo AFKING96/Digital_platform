@@ -10,7 +10,7 @@ import { FileCard } from "@/components/ui/file-card-collections";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Edit2, Save, Trash2, X, FileUp, File as FileIcon, Search, GraduationCap, AlertTriangle } from "lucide-react";
+import { Plus, Edit2, Save, Trash2, X, FileUp, File as FileIcon, Search, GraduationCap, AlertTriangle, Lock, Unlock } from "lucide-react";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { type FormatFileProps } from "@/components/ui/file-card-collections";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +21,8 @@ interface Lesson {
   order: number;
   title: string;
   summary: string[];
+  isUnlocked?: boolean;
+  subjectId?: string;
   file?: string;
 }
 
@@ -30,24 +32,54 @@ export default function LessonsPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   
-  const [form, setForm] = useState({ id: 1, title: "", summary: "", file: "" });
+  const [form, setForm] = useState({ id: 1, title: "", summary: "", file: "", isUnlocked: false });
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [subjects, setSubjects] = useState<{id: string, name: string}[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
+
   useEffect(() => {
-    const q = query(collection(db, "lessons"), orderBy("order", "asc"));
+    const unsub = onSnapshot(query(collection(db, "subjects"), orderBy("name", "asc")), (snap) => {
+      const sData = snap.docs.map(d => ({ id: d.id, name: d.data().name }));
+      setSubjects(sData);
+      if (sData.length > 0 && !selectedSubjectId) {
+        setSelectedSubjectId(sData[0].id);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    let q;
+    if (selectedSubjectId) {
+      // Remove orderBy to avoid index requirement
+      q = query(collection(db, "lessons"), where("subjectId", "==", selectedSubjectId));
+    } else {
+      q = query(collection(db, "lessons"), orderBy("order", "asc"));
+    }
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: Lesson[] = [];
       snapshot.forEach((doc) => {
-        data.push(doc.data() as Lesson);
+        const l = doc.data() as Lesson;
+        if (!selectedSubjectId && l.subjectId) return;
+        data.push(l);
       });
+
+      // Client-side sort if subject selected
+      if (selectedSubjectId) {
+        data.sort((a, b) => a.order - b.order);
+      }
+
       setLessons(data);
       setLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [selectedSubjectId]);
 
   const filteredLessons = useMemo(() => {
     return lessons.filter(l => 
@@ -113,7 +145,9 @@ export default function LessonsPage() {
         order: finalOrder,
         title: form.title,
         summary: summaryArray,
-        file: form.file || ""
+        file: form.file || "",
+        isUnlocked: editingId ? (lessons.find(l => l.id === editingId)?.isUnlocked ?? false) : false,
+        subjectId: selectedSubjectId
       };
 
       await setDoc(doc(db, "lessons", lessonId.toString()), newLesson);
@@ -126,7 +160,7 @@ export default function LessonsPage() {
 
       setIsAdding(false);
       setEditingId(null);
-      setForm({ id: Date.now(), title: "", summary: "", file: "" });
+      setForm({ id: Date.now(), title: "", summary: "", file: "", isUnlocked: false });
     } catch (error) {
       console.error("Error saving lesson:", error);
     }
@@ -176,18 +210,43 @@ export default function LessonsPage() {
       id: lesson.id,
       title: lesson.title,
       summary: lesson.summary.join('\n'),
-      file: lesson.file || ""
+      file: lesson.file || "",
+      isUnlocked: lesson.isUnlocked || false
     });
     setEditingId(lesson.id);
     setIsAdding(true);
   };
 
+  const toggleUnlock = async (lesson: Lesson) => {
+    try {
+      const newStatus = !lesson.isUnlocked;
+      await setDoc(doc(db, "lessons", lesson.id.toString()), {
+        ...lesson,
+        isUnlocked: newStatus
+      });
+    } catch (error) {
+      console.error("Error toggling lesson status:", error);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-5xl">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
+        <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight">Lessons Management</h1>
-          <p className="text-muted-foreground">Add, edit, or remove learning modules.</p>
+          <div className="flex items-center gap-3">
+            <p className="text-muted-foreground">Manage modules for</p>
+            <select 
+              className="bg-black/40 border border-white/10 rounded-lg px-3 py-1 text-sm font-bold text-primary focus:outline-none focus:border-primary/50"
+              value={selectedSubjectId}
+              onChange={(e) => setSelectedSubjectId(e.target.value)}
+            >
+              {subjects.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+              <option value="">Legacy / All</option>
+            </select>
+          </div>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="relative w-full md:w-64 group">
@@ -202,7 +261,7 @@ export default function LessonsPage() {
           <Button onClick={() => {
             setIsAdding(!isAdding);
             setEditingId(null);
-            setForm({ id: Date.now(), title: "", summary: "", file: "" });
+            setForm({ id: Date.now(), title: "", summary: "", file: "", isUnlocked: false });
           }} className="bg-primary hover:bg-primary/90 btn-glow shrink-0">
             {isAdding && !editingId ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
             {isAdding && !editingId ? "Cancel" : "Add Lesson"}
@@ -291,6 +350,18 @@ export default function LessonsPage() {
               )}
             </div>
             <div className="flex gap-2 shrink-0">
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className={`${lesson.isUnlocked ? "border-green-500/20 text-green-500 hover:bg-green-500/10" : "border-amber-500/20 text-amber-500 hover:bg-amber-500/10"}`}
+                onClick={() => toggleUnlock(lesson)}
+              >
+                {lesson.isUnlocked ? (
+                  <><Unlock className="w-4 h-4 mr-2" /> Unlocked</>
+                ) : (
+                  <><Lock className="w-4 h-4 mr-2" /> Locked</>
+                )}
+              </Button>
               <Button size="sm" variant="outline" className="border-white/10 hover:bg-white/5" onClick={() => startEdit(lesson)}>
                 <Edit2 className="w-4 h-4 mr-2" /> Edit
               </Button>

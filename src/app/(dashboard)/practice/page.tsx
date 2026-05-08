@@ -15,6 +15,7 @@ interface Lesson {
   id: number;
   title: string;
   order: number;
+  isUnlocked?: boolean;
 }
 
 interface Question {
@@ -32,7 +33,12 @@ export default function PracticeLandingPage() {
   useEffect(() => {
     // Fetch Lessons
     const unsubLessons = onSnapshot(query(collection(db, "lessons"), orderBy("order", "asc")), async (snap) => {
-      const lessonData = snap.docs.map(d => ({ id: d.data().id, title: d.data().title, order: d.data().order }));
+      const lessonData = snap.docs.map(d => ({ 
+        id: d.data().id, 
+        title: d.data().title, 
+        order: d.data().order,
+        isUnlocked: d.data().isUnlocked 
+      }));
       setLessons(lessonData);
 
       // Fetch Question Counts for each lesson
@@ -72,7 +78,7 @@ export default function PracticeLandingPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {lessons.map((lesson, idx) => {
+        {lessons.filter(l => l.isUnlocked !== false).map((lesson, idx) => {
           const total = questionsCount[lesson.id] || 0;
           const solved = solvedCount[lesson.id] || 0;
           const progress = total > 0 ? (solved / total) * 100 : 0;

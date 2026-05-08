@@ -10,6 +10,8 @@ import { PlayCircle, Target, CheckCircle2, FileText, ArrowRight, Lock, BookOpen,
 import Link from "next/link";
 import { ContainerScroll } from "@/components/ui/container-scroll-animation";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { Blocks } from "lucide-react";
 
 interface UserData {
   name: string;
@@ -19,6 +21,15 @@ interface UserData {
   points?: number;
   streak?: number;
   completedLessons?: number[];
+  enrolledSubjects?: string[];
+}
+
+interface Subject {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  icon: string;
 }
 
 interface Lesson {
@@ -26,6 +37,7 @@ interface Lesson {
   order: number;
   title: string;
   summary: string[];
+  isUnlocked?: boolean;
 }
 
 export default function DashboardPage() {
@@ -33,6 +45,8 @@ export default function DashboardPage() {
   const [submissionsCount, setSubmissionsCount] = useState(0);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!auth.currentUser) {
@@ -48,13 +62,54 @@ export default function DashboardPage() {
     });
 
     // 2. Real-time Lessons
-    const lessonsQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
+    let lessonsQuery;
+    if (selectedSubjectId) {
+      // Remove orderBy to avoid index
+      lessonsQuery = query(collection(db, "lessons"), where("subjectId", "==", selectedSubjectId));
+    } else {
+      lessonsQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
+    }
+
     const lessonsUnsubscribe = onSnapshot(lessonsQuery, (snapshot) => {
       const lData: Lesson[] = [];
-      snapshot.forEach(doc => lData.push(doc.data() as Lesson));
+      snapshot.forEach(doc => {
+        const l = doc.data() as Lesson;
+        // If no subject selected, only show legacy lessons (no subjectId)
+        if (!selectedSubjectId && (l as any).subjectId) return;
+        lData.push(l);
+      });
+
+      // Client-side sort if subject selected
+      if (selectedSubjectId) {
+        lData.sort((a, b) => (a.order || 0) - (b.order || 0));
+      }
+
       setLessons(lData);
       setLoading(false);
     });
+
+    // 2.5 Fetch Enrolled Subjects
+    const fetchSubjects = async () => {
+      if (!auth.currentUser) return;
+      const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+      if (userDoc.exists()) {
+        const enrolledIds = userDoc.data().enrolledSubjects || [];
+        if (enrolledIds.length > 0) {
+          const sData: Subject[] = [];
+          for (const id of enrolledIds) {
+            const sSnap = await getDoc(doc(db, "subjects", id));
+            if (sSnap.exists()) {
+              sData.push({ id: sSnap.id, ...sSnap.data() } as Subject);
+            }
+          }
+          setSubjects(sData);
+          if (sData.length === 1 && !selectedSubjectId) {
+            setSelectedSubjectId(sData[0].id);
+          }
+        }
+      }
+    };
+    fetchSubjects();
 
     // 3. Real-time Submissions count
     const subsQuery = query(collection(db, "submissions"), where("userId", "==", auth.currentUser.uid));
@@ -113,8 +168,75 @@ export default function DashboardPage() {
   const completedCount = userData?.completedLessons?.length || 0;
   const progressPercentage = lessons.length > 0 ? Math.round((completedCount / lessons.length) * 100) : 0;
 
+  if (subjects.length > 0 && !selectedSubjectId) {
+    return (
+      <div className="space-y-12 pb-10">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-5xl font-bold tracking-tight">
+            Welcome back, <br/>
+            <span className="text-primary">{userData?.name || "Student"}</span>
+          </h1>
+          <p className="text-muted-foreground text-xl">Select a subject to continue your journey.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {subjects.map((subject, idx) => (
+            <motion.div
+              key={subject.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              whileHover={{ scale: 1.02 }}
+              className="cursor-pointer"
+              onClick={() => setSelectedSubjectId(subject.id)}
+            >
+              <Card className={cn(
+                "p-8 h-full bg-white/5 border-white/10 hover:border-primary/50 transition-all relative overflow-hidden group",
+                `hover:bg-${subject.color}-500/5`
+              )}>
+                <div className={cn(
+                  "absolute top-0 left-0 w-1.5 h-full transition-all",
+                  `bg-${subject.color}-500`
+                )} />
+                
+                <div className="flex flex-col h-full gap-6">
+                  <div className={cn(
+                    "p-4 rounded-2xl w-fit transition-all",
+                    `bg-${subject.color}-500/10 text-${subject.color}-500 group-hover:scale-110`
+                  )}>
+                    <Blocks className="w-8 h-8" />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <h3 className="text-2xl font-bold">{subject.name}</h3>
+                    <p className="text-muted-foreground line-clamp-2">{subject.description}</p>
+                  </div>
+
+                  <div className="mt-auto pt-6 flex items-center gap-2 text-primary font-bold">
+                    <span>Enter Course</span>
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-12 pb-10">
+      {subjects.length > 1 && (
+        <Button 
+          variant="ghost" 
+          onClick={() => setSelectedSubjectId(null)}
+          className="text-muted-foreground hover:text-white -mb-8"
+        >
+          <ArrowRight className="w-4 h-4 mr-2 rotate-180" />
+          Switch Subject
+        </Button>
+      )}
       <ContainerScroll
         titleComponent={
           <div className="flex flex-col gap-6 mb-8">
@@ -149,7 +271,8 @@ export default function DashboardPage() {
           </div>
           
           <div className="relative z-10 flex flex-col items-center gap-6">
-            <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+            <div className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-semibold ${currentLessonData?.isUnlocked === false ? "border-amber-500/30 bg-amber-500/10 text-amber-500" : "border-primary/30 bg-primary/10 text-primary"}`}>
+              {currentLessonData?.isUnlocked === false ? <Lock className="w-3 h-3 mr-2" /> : null}
               Current Lesson
             </div>
             <h2 className="text-4xl md:text-5xl font-bold text-white">{currentLessonTitle}</h2>
@@ -158,20 +281,23 @@ export default function DashboardPage() {
             </p>
             
             <div className="flex flex-wrap justify-center gap-4 mt-4">
-              <Link href={`/materials`}>
-                <Button variant="outline" className="border-white/10 hover:bg-white/5 h-14 px-6 rounded-2xl flex items-center gap-2 group">
+              <Link href={`/materials`} className={currentLessonData?.isUnlocked === false ? "pointer-events-none opacity-50" : ""}>
+                <Button variant="outline" className="border-white/10 hover:bg-white/5 h-14 px-6 rounded-2xl flex items-center gap-2 group" disabled={currentLessonData?.isUnlocked === false}>
                   <BookOpen className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
                   Materials
                 </Button>
               </Link>
-              <Link href={`/practice/${currentLesson}`}>
-                <Button className="bg-primary hover:bg-primary/90 text-white h-14 px-8 rounded-2xl flex items-center gap-2 shadow-[0_0_30px_rgba(var(--primary),0.3)] hover:scale-105 transition-all">
-                  <Target className="w-5 h-5" />
-                  Start Practice
+              <Link href={`/practice/${currentLesson}`} className={currentLessonData?.isUnlocked === false ? "pointer-events-none" : ""}>
+                <Button 
+                  className={`${currentLessonData?.isUnlocked === false ? "bg-white/10 text-white/40 cursor-not-allowed" : "bg-primary hover:bg-primary/90 text-white shadow-[0_0_30px_rgba(var(--primary),0.3)] hover:scale-105"} h-14 px-8 rounded-2xl flex items-center gap-2 transition-all`}
+                  disabled={currentLessonData?.isUnlocked === false}
+                >
+                  {currentLessonData?.isUnlocked === false ? <Lock className="w-5 h-5" /> : <Target className="w-5 h-5" />}
+                  {currentLessonData?.isUnlocked === false ? "Locked" : "Start Practice"}
                 </Button>
               </Link>
-              <Link href={`/homework/${currentLesson}`}>
-                <Button variant="outline" className="border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 h-14 px-6 rounded-2xl flex items-center gap-2 group">
+              <Link href={`/homework/${currentLesson}`} className={currentLessonData?.isUnlocked === false ? "pointer-events-none opacity-50" : ""}>
+                <Button variant="outline" className="border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 h-14 px-6 rounded-2xl flex items-center gap-2 group" disabled={currentLessonData?.isUnlocked === false}>
                   <ClipboardList className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
                   Homework
                 </Button>
@@ -258,7 +384,7 @@ export default function DashboardPage() {
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {lessons.map((lesson, idx) => {
-            const isUnlocked = (idx + 1) <= currentLessonDisplayNumber;
+            const isUnlocked = lesson.isUnlocked ?? false;
             
             return (
               <motion.div key={lesson.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * idx }}>
@@ -281,7 +407,11 @@ export default function DashboardPage() {
                     </Card>
                   </Link>
                 ) : (
-                  <Card className="glass-card p-6 h-full flex flex-col gap-4 opacity-50 relative overflow-hidden">
+                  <Card className="glass-card p-6 h-full flex flex-col gap-4 opacity-40 relative overflow-hidden grayscale blur-[0.5px] cursor-not-allowed group">
+                    <div className="absolute inset-0 bg-black/10 z-20 flex flex-col items-center justify-center backdrop-blur-[1px]">
+                      <Lock className="w-8 h-8 text-white/40 mb-2" />
+                      <span className="text-white/60 font-black text-[10px] uppercase tracking-[0.2em]">Available Soon</span>
+                    </div>
                     <div className="flex justify-between items-start">
                       <div className="p-3 bg-white/5 rounded-xl text-muted-foreground">
                         <Lock className="w-6 h-6" />
@@ -290,7 +420,7 @@ export default function DashboardPage() {
                     </div>
                     <div>
                       <h3 className="font-bold text-xl mb-1 text-muted-foreground">Module {lesson.order}: {lesson.title}</h3>
-                      <p className="text-sm text-muted-foreground/50 line-clamp-2">Complete previous modules to unlock.</p>
+                      <p className="text-sm text-muted-foreground/50 line-clamp-2">This module is currently unavailable.</p>
                     </div>
                   </Card>
                 )}

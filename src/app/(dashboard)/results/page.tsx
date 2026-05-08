@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, doc, getDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -33,27 +33,46 @@ export default function ResultsPage() {
       if (!auth.currentUser) return;
       
       try {
-        // 1. Fetch lesson mapping
-        const lQuery = query(collection(db, "lessons"), orderBy("order", "asc"));
-        const lSnap = await getDocs(lQuery);
-        const mapping: Record<number, number> = {};
+        // 1. Fetch user enrollment
+        const uSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
+        const enrolledSubjects = uSnap.data()?.enrolledSubjects || [];
+
+        // 2. Fetch all lessons to get their subjectId and order
+        const lSnap = await getDocs(collection(db, "lessons"));
+        const lessonInfo: Record<number, { order: number, subjectId?: string }> = {};
         lSnap.docs.forEach((d) => {
           const data = d.data();
-          mapping[data.id] = data.order;
+          lessonInfo[data.id] = { 
+            order: data.order, 
+            subjectId: data.subjectId 
+          };
+        });
+        
+        const mapping: Record<number, number> = {};
+        Object.entries(lessonInfo).forEach(([id, info]) => {
+          mapping[Number(id)] = info.order;
         });
         setLessonMap(mapping);
 
-        // 2. Fetch submissions
+        // 3. Fetch submissions and filter by enrollment
         const subsQuery = query(
           collection(db, "submissions"), 
           where("userId", "==", auth.currentUser.uid)
         );
         const subsSnap = await getDocs(subsQuery);
         
-        const subsData = subsSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Submission[];
+        const subsData = subsSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() } as Submission))
+          .filter(sub => {
+            const info = lessonInfo[sub.lessonId];
+            // If lesson has a subject, user must be enrolled in it
+            if (info?.subjectId) {
+              return enrolledSubjects.includes(info.subjectId);
+            }
+            // If no subjectId (legacy), allow for now or filter out. 
+            // Platform rules say everything belongs to a subject.
+            return false; 
+          });
         
         subsData.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
         setSubmissions(subsData);

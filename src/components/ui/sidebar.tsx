@@ -93,6 +93,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 
 const adminLinks = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/subjects", label: "Subjects", icon: Blocks },
   { href: "/admin/students", label: "Students", icon: UserCircle },
   { href: "/admin/groups", label: "Groups", icon: Users },
   { href: "/admin/calendar", label: "Calendar", icon: CalendarIcon },
