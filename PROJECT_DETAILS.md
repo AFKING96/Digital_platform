@@ -81,7 +81,13 @@ Coursat is a premium student learning and practice platform built with Next.js 1
 - **Production-Grade Data Integrity**: 
   - **Cascading Deletions**: Implemented atomic `writeBatch` operations to ensure orphaned data (submissions, payment logs, notifications) is purged when parent entities (lessons, students, sessions) are deleted.
   - **Financial Consistency**: Integrated automatic balance reversal logic; deleting a payment log now correctly restores the student's outstanding balance.
+- **Unified Metadata Resolution**: Developed the `useLessonMap` hook as the platform's reactive source of truth. All modules (Admin and Student) now resolve lesson titles and ordering dynamically, eliminating metadata desync and reducing redundant Firestore reads.
+- **Assessment Engine Hardening**:
+  - **Flexible Question Types**: Fully implemented `Essay` support across all assessment modules (Homework, Practice, Quizzes), including a dedicated text-area renderer and "Pending Review" status tracking.
+  - **Type Standardization**: Normalized question types (`MCQ`, `TF`, `Essay`) across all solver interfaces for consistent data modeling.
+- **Material Upload Security**: Integrated filename sanitization logic for all storage uploads, ensuring cross-platform compatibility and preventing storage path errors from special characters.
 - **Full Real-time Synchronization**: Migrated core modules (Lessons, Quizzes, Homework, Student Dashboard, Materials, Calendar) to `onSnapshot` listeners, ensuring the UI across both Admin and Student panels reflects the database state instantly.
 - **Administrative Communications**: Launched the `Notifications` management module, allowing admins to send targeted or system-wide alerts with automated cleanup on parent entity removal.
-- **Dynamic Curriculum**: Transitioned Student Materials from static placeholders to a live Firestore-backed repository with support for real-time updates and multiple file formats.
-- **Robustness**: fully validated end-to-end flows for lesson completion, payment tracking, and cascading cleanup with zero data inconsistencies.
+- **Robustness**: Fully validated end-to-end flows for lesson completion, payment tracking, and cascading cleanup with zero data inconsistencies.
+- **Premium UX**: Implemented high-contrast, interactive solving components with Framer Motion, featuring real-time locking mechanisms and curriculum-aware progress tracking.
+

@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/components/providers/auth-provider";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { BookOpen, CheckCircle2, Clock, AlertCircle, ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { useLessonMap } from "@/hooks/use-lesson-map";
 
 interface Homework {
   id: string;
@@ -21,16 +23,19 @@ export default function StudentHomeworkPage() {
   const [homeworks, setHomeworks] = useState<Homework[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const { user } = useAuth();
+  const { getLessonOrder, getLessonTitle } = useLessonMap();
+
   useEffect(() => {
     const fetchHomeworkAndSubmissions = async () => {
-      if (!auth.currentUser) return;
+      if (!user) return;
       try {
         // 1. Fetch all homework
         const hwSnap = await getDocs(query(collection(db, "homework"), orderBy("deadline", "asc")));
         const hws = hwSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
 
         // 2. Fetch student submissions
-        const subSnap = await getDocs(query(collection(db, "submissions"), where("userId", "==", auth.currentUser.uid)));
+        const subSnap = await getDocs(query(collection(db, "submissions"), where("userId", "==", user.uid)));
         const subs = subSnap.docs.map(doc => doc.data());
 
         // 3. Map status
@@ -59,7 +64,7 @@ export default function StudentHomeworkPage() {
     };
 
     fetchHomeworkAndSubmissions();
-  }, []);
+  }, [user]);
 
   if (loading) {
     return (
@@ -99,10 +104,10 @@ export default function StudentHomeworkPage() {
                     <BookOpen className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-white">{hw.title}</h3>
+                    <h3 className="text-lg font-bold text-white">{hw.title || getLessonTitle(hw.lessonId, `Module ${hw.lessonId}`)}</h3>
                     <div className="flex flex-wrap gap-4 mt-1">
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        Module {hw.lessonId}
+                        Module {getLessonOrder(hw.lessonId, hw.lessonId)}
                       </span>
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Clock className="w-3 h-3" /> Due: {hw.deadline.toDate().toLocaleString()}

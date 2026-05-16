@@ -12,6 +12,7 @@ import { Plus, Trash2, Edit2, Target, Search, X, Check, Layout, BarChart3, Save,
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
+import { QuestionRenderer } from "@/components/questions/QuestionRenderer";
 import {
   Select,
   SelectContent,
@@ -19,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useLessonMap } from "@/hooks/use-lesson-map";
 
 interface Question {
   id: string;
@@ -27,6 +29,7 @@ interface Question {
   content: string;
   options?: string[];
   answer?: string;
+  expectedAnswer?: string;
   explanation?: string;
   imageUrl?: string;
   link?: string;
@@ -34,18 +37,10 @@ interface Question {
   createdAt: any;
 }
 
-interface Lesson {
-  id: number;
-  title: string;
-  order: number;
-}
-
 export default function PracticeAdminPage() {
-  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const { lessons, loading: lessonsLoading } = useLessonMap();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedLessonId, setSelectedLessonId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -54,6 +49,7 @@ export default function PracticeAdminPage() {
     content: "",
     options: ["", "", "", ""],
     answer: "",
+    expectedAnswer: "",
     explanation: "",
     imageUrl: "",
     link: "",
@@ -64,21 +60,18 @@ export default function PracticeAdminPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    // Fetch Lessons
-    const unsubLessons = onSnapshot(query(collection(db, "lessons"), orderBy("order", "asc")), (snap) => {
-      const data = snap.docs.map(d => ({ id: d.data().id, title: d.data().title, order: d.data().order }));
-      setLessons(data);
-      if (data.length > 0 && !selectedLessonId) setSelectedLessonId(data[0].id);
-      setLoading(false);
-    });
+    if (lessons.length > 0 && !selectedLessonId) {
+      setSelectedLessonId(lessons[0].id);
+    }
+  }, [lessons, selectedLessonId]);
 
+  useEffect(() => {
     // Fetch All Practice Questions
     const unsubQuestions = onSnapshot(query(collection(db, "practice_questions"), orderBy("order", "asc")), (snap) => {
       setQuestions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Question)));
     });
 
     return () => {
-      unsubLessons();
       unsubQuestions();
     };
   }, []);
@@ -106,12 +99,27 @@ export default function PracticeAdminPage() {
     }
   };
 
+  const addOption = () => {
+    const newOpts = [...(form.options || [])];
+    newOpts.push("");
+    setForm({...form, options: newOpts});
+  };
+
+  const removeOption = (idx: number) => {
+    const newOpts = [...(form.options || [])];
+    if (newOpts.length > 2) {
+      newOpts.splice(idx, 1);
+      setForm({...form, options: newOpts});
+    }
+  };
+
   const resetForm = () => {
     setForm({
       type: "MCQ",
       content: "",
       options: ["", "", "", ""],
       answer: "",
+      expectedAnswer: "",
       explanation: "",
       imageUrl: "",
       link: "",
@@ -129,7 +137,7 @@ export default function PracticeAdminPage() {
     finally { setIsDeleting(false); }
   };
 
-  if (loading) return <div className="p-8"><Skeleton className="h-64 w-full bg-white/5" /></div>;
+  if (lessonsLoading) return <div className="p-8"><Skeleton className="h-64 w-full bg-white/5" /></div>;
 
   const currentLessonQuestions = questions.filter(q => q.lessonId === selectedLessonId);
 
@@ -153,7 +161,7 @@ export default function PracticeAdminPage() {
             <SelectContent>
               {lessons.map(l => (
                 <SelectItem key={l.id} value={l.id.toString()}>
-                  Lesson {l.order}: {l.title}
+                  {l.title}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -215,24 +223,44 @@ export default function PracticeAdminPage() {
 
                     {form.type === "MCQ" && (
                       <div className="space-y-3">
-                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1 text-emerald-400">Answer Options</label>
+                        <div className="flex items-center justify-between px-1">
+                          <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest text-emerald-400">Answer Options</label>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={addOption}
+                            className="h-6 text-[10px] font-black uppercase tracking-wider text-primary hover:bg-primary/10"
+                          >
+                            <Plus className="w-3 h-3 mr-1" /> Add Option
+                          </Button>
+                        </div>
                         {form.options?.map((opt, i) => (
-                          <div key={i} className="flex gap-2">
+                          <div key={i} className="flex gap-2 group/opt">
                             <div className={`w-8 h-10 flex items-center justify-center rounded-lg font-bold border transition-all ${
                               form.answer === opt && opt !== "" ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400" : "bg-white/5 border-white/10 text-muted-foreground"
                             }`}>
                               {String.fromCharCode(65 + i)}
                             </div>
-                            <Input 
-                              placeholder={`Option ${i + 1}`} 
-                              value={opt}
-                              onChange={e => {
-                                const newOpts = [...(form.options || [])];
-                                newOpts[i] = e.target.value;
-                                setForm({...form, options: newOpts});
-                              }}
-                              className="bg-black/30"
-                            />
+                            <div className="flex-1 relative">
+                              <Input 
+                                placeholder={`Option ${i + 1}`} 
+                                value={opt}
+                                onChange={e => {
+                                  const newOpts = [...(form.options || [])];
+                                  newOpts[i] = e.target.value;
+                                  setForm({...form, options: newOpts});
+                                }}
+                                className="bg-black/30 pr-10"
+                              />
+                              {form.options!.length > 2 && (
+                                <button 
+                                  onClick={() => removeOption(i)}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-red-400 opacity-0 group-hover/opt:opacity-100 transition-opacity"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
                             <Button 
                               variant="ghost" 
                               size="icon"
@@ -272,6 +300,21 @@ export default function PracticeAdminPage() {
                         className="bg-black/30 h-24"
                       />
                     </div>
+                    
+                    {form.type === "Essay" && (
+                      <div className="space-y-2 p-4 bg-primary/5 border border-primary/10 rounded-2xl">
+                        <label className="text-xs font-bold text-primary uppercase tracking-widest px-1">Expected Answer / Model Solution</label>
+                        <Textarea 
+                          placeholder="Write the ideal answer or solving method here... This will be shown to students AFTER they submit their response." 
+                          value={form.expectedAnswer}
+                          onChange={e => setForm({...form, expectedAnswer: e.target.value})}
+                          className="bg-black/30 min-h-[150px]"
+                        />
+                        <p className="text-[10px] text-muted-foreground italic px-1">
+                          This is used for student self-comparison and review.
+                        </p>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -318,7 +361,7 @@ export default function PracticeAdminPage() {
           <div className="flex items-center justify-between px-2">
             <h2 className="font-bold flex items-center gap-2">
               <Layout className="w-4 h-4 text-primary" />
-              Lesson {selectedLessonId} Content
+              {lessons.find(l => l.id === selectedLessonId)?.title || "Lesson"} Content
             </h2>
             <span className="text-xs text-muted-foreground font-medium">{currentLessonQuestions.length} Questions total</span>
           </div>
@@ -334,12 +377,11 @@ export default function PracticeAdminPage() {
                     <div className="w-0.5 h-full bg-gradient-to-b from-white/10 to-transparent" />
                   </div>
 
-                  <div className="flex-1 space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-primary mb-1 block">{q.type}</span>
-                        <p className="text-white font-medium text-lg leading-snug">{q.content}</p>
-                      </div>
+                  <div className="flex-1 space-y-4 relative">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
+                        {q.type}
+                      </span>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/5" onClick={() => {
                           setForm(q);
@@ -353,18 +395,16 @@ export default function PracticeAdminPage() {
                       </div>
                     </div>
 
-                    {q.options && q.options.length > 0 && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {q.options.map((opt, i) => (
-                          <div key={i} className={`p-2 rounded-lg text-sm flex items-center gap-2 ${
-                            q.answer === opt ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-white/5 text-muted-foreground border border-white/10"
-                          }`}>
-                            <span className="font-bold opacity-50">{String.fromCharCode(65 + i)}.</span>
-                            <span className="truncate">{opt}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <div className="pointer-events-none opacity-80 scale-[0.95] origin-top-left -mb-6">
+                      <QuestionRenderer 
+                        question={q}
+                        value={q.answer || ""}
+                        onChange={() => {}}
+                        isSubmitted={true}
+                        showExplanation={true}
+                        disabled={true}
+                      />
+                    </div>
 
                     <div className="flex items-center gap-6 pt-2">
                        <Link 

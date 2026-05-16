@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { collection, query, where, getDocs, orderBy, doc, getDoc } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/components/providers/auth-provider";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,8 @@ import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock, Trophy, AlertCircle, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
+
+import { useLessonMap } from "@/hooks/use-lesson-map";
 
 interface Submission {
   id: string;
@@ -26,45 +29,30 @@ export default function ResultsPage() {
   
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
+  
+  const { lessonMap, getLessonTitle, getLessonOrder } = useLessonMap();
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!auth.currentUser) return;
+      if (!user) return;
       
       try {
         // 1. Fetch user enrollment
-        const uSnap = await getDoc(doc(db, "users", auth.currentUser.uid));
+        const uSnap = await getDoc(doc(db, "users", user.uid));
         const enrolledSubjects = uSnap.data()?.enrolledSubjects || [];
 
-        // 2. Fetch all lessons to get their subjectId and order
-        const lSnap = await getDocs(collection(db, "lessons"));
-        const lessonInfo: Record<number, { order: number, subjectId?: string }> = {};
-        lSnap.docs.forEach((d) => {
-          const data = d.data();
-          lessonInfo[data.id] = { 
-            order: data.order, 
-            subjectId: data.subjectId 
-          };
-        });
-        
-        const mapping: Record<number, number> = {};
-        Object.entries(lessonInfo).forEach(([id, info]) => {
-          mapping[Number(id)] = info.order;
-        });
-        setLessonMap(mapping);
-
-        // 3. Fetch submissions and filter by enrollment
+        // 2. Fetch submissions and filter by enrollment
         const subsQuery = query(
           collection(db, "submissions"), 
-          where("userId", "==", auth.currentUser.uid)
+          where("userId", "==", user.uid)
         );
         const subsSnap = await getDocs(subsQuery);
         
         const subsData = subsSnap.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as Submission))
           .filter(sub => {
-            const info = lessonInfo[sub.lessonId];
+            const info = lessonMap[sub.lessonId];
             // If lesson has a subject, user must be enrolled in it
             if (info?.subjectId) {
               return enrolledSubjects.includes(info.subjectId);
@@ -83,8 +71,10 @@ export default function ResultsPage() {
       }
     };
 
-    fetchData();
-  }, []);
+    if (Object.keys(lessonMap).length > 0) {
+        fetchData();
+    }
+  }, [user, lessonMap]);
 
   if (loading) {
     return (
@@ -148,8 +138,9 @@ export default function ResultsPage() {
               <Card className="glass-card p-6 md:p-8 flex flex-col md:flex-row gap-6 justify-between items-start md:items-center">
                 <div className="space-y-4 flex-1">
                   <div className="flex items-center gap-3">
-                    <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-                      Module {lessonMap[sub.lessonId] || sub.lessonId}
+                    <span className="inline-flex flex-col border border-primary/30 bg-primary/10 px-4 py-2 rounded-xl">
+                      <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-0.5">Module {getLessonOrder(sub.lessonId, sub.lessonId)}</span>
+                      <span className="text-sm font-bold text-white">{getLessonTitle(sub.lessonId, "Practice Session")}</span>
                     </span>
                     <span className="text-sm text-muted-foreground flex items-center gap-1">
                       <Clock className="w-4 h-4" />
@@ -172,7 +163,7 @@ export default function ResultsPage() {
                       {sub.feedback && (
                         <div className="flex-1 bg-white/5 p-4 rounded-xl border border-white/10 flex items-start gap-3">
                           <MessageSquare className="w-5 h-5 text-primary mt-0.5 shrink-0" />
-                          <p className="text-sm text-white/80">{sub.feedback}</p>
+                          <p className="text-sm text-white/80 whitespace-pre-wrap">{sub.feedback}</p>
                         </div>
                       )}
                     </div>

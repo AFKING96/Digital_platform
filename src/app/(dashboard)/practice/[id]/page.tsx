@@ -16,16 +16,18 @@ import {
   XCircle, 
   HelpCircle, 
   Star, 
-  Save, 
-  Loader2, 
   Trophy,
   ArrowRight,
   Info,
-  Lock
+  Lock,
+  ClipboardList
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useLessonMap } from "@/hooks/use-lesson-map";
+import { Textarea } from "@/components/ui/textarea";
+import { QuestionRenderer } from "@/components/questions/QuestionRenderer";
 
 interface Question {
   id: string;
@@ -41,7 +43,8 @@ interface Question {
 export default function PracticeSolverPage() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, userData, isAdmin } = useAuth();
+  const { isLessonUnlocked } = useLessonMap();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -52,50 +55,26 @@ export default function PracticeSolverPage() {
   const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
+    if (params.id && user) {
+      setIsLocked(!isLessonUnlocked(
+        Number(params.id), 
+        userData?.unlockedLessons,
+        userData?.enrolledSubjects,
+        isAdmin
+      ));
+    }
+  }, [params.id, user, userData, isAdmin, isLessonUnlocked]);
+
+  useEffect(() => {
     async function fetchData() {
       if (!params.id) return;
       
-      // Check if lesson is unlocked and subject is enrolled
-      const lessonDoc = await getDoc(doc(db, "lessons", params.id as string));
-      if (lessonDoc.exists()) {
-        const lessonData = lessonDoc.data();
-        
-        let isUnlocked = false;
-        
-        if (user) {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          const userData = userDoc.data();
-          
-          if (userData?.unlockedLessons) {
-             isUnlocked = userData.unlockedLessons.includes(lessonData.id);
-          }
-          
-          if (!isUnlocked) {
-            setIsLocked(true);
-            setLoading(false);
-            return;
-          }
-          
-          const enrolled = userData?.enrolledSubjects || [];
-          if (lessonData.subjectId && !enrolled.includes(lessonData.subjectId)) {
-            setIsLocked(true);
-            setLoading(false);
-            return;
-          }
-        } else if (!isUnlocked) {
-          setIsLocked(true);
-          setLoading(false);
-          return;
-        }
-      }
-
       // Fetch Questions
       const qSnap = await getDocs(query(
         collection(db, "practice_questions"), 
         where("lessonId", "==", Number(params.id))
       ));
       const qData = qSnap.docs.map(d => ({ id: d.id, ...d.data() } as Question));
-      // Client-side sort to avoid index requirements
       qData.sort((a, b) => ((a as any).order || 0) - ((b as any).order || 0));
       setQuestions(qData);
 
@@ -121,9 +100,8 @@ export default function PracticeSolverPage() {
     const q = questions[currentIndex];
     setSubmitted({ ...submitted, [q.id]: true });
 
-    // Save individual response for analytics
     if (user) {
-      const isCorrect = answers[q.id] === q.answer;
+      const isCorrect = q.type === "Essay" ? true : (answers[q.id] === q.answer);
       await setDoc(doc(db, "submissions", `${user.uid}_${q.id}`), {
         userId: user.uid,
         userName: user.displayName || "Student",
@@ -131,6 +109,7 @@ export default function PracticeSolverPage() {
         lessonId: Number(params.id),
         answer: answers[q.id] || "",
         isCorrect,
+        status: q.type === "Essay" ? "pending" : "reviewed",
         type: "practice",
         timestamp: serverTimestamp()
       });
@@ -185,7 +164,6 @@ export default function PracticeSolverPage() {
 
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-8">
-      {/* Header / Progress */}
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => router.push("/practice")} className="text-muted-foreground hover:text-white">
           <ChevronLeft className="w-4 h-4 mr-2" /> Exit Practice
@@ -224,78 +202,32 @@ export default function PracticeSolverPage() {
                </Button>
             </div>
 
-            <div className="space-y-8">
-              <div className="space-y-4">
-                <span className="text-[10px] font-black uppercase tracking-widest text-primary px-3 py-1 bg-primary/10 rounded-full border border-primary/20">
-                  {currentQuestion.type}
-                </span>
-                <h2 className="text-2xl md:text-3xl font-bold leading-tight">{currentQuestion.content}</h2>
-                {currentQuestion.imageUrl && (
-                  <img src={currentQuestion.imageUrl} alt="Question Context" className="rounded-2xl border border-white/10 max-h-64 object-contain bg-black/20" />
-                )}
-              </div>
-
-              <div className="grid gap-3">
-                {currentQuestion.type === "MCQ" && currentQuestion.options?.map((opt, i) => {
-                  const isSelected = currentAnswer === opt;
-                  const isCorrectOpt = opt === currentQuestion.answer;
-                  
-                  return (
-                    <button
-                      key={i}
-                      disabled={isSubmitted}
-                      onClick={() => handleSelectOption(opt)}
-                      className={cn(
-                        "p-5 rounded-2xl border transition-all text-left flex items-center gap-4 group",
-                        isSelected && !isSubmitted && "bg-primary/10 border-primary text-white shadow-[0_0_20px_rgba(var(--primary),0.1)]",
-                        isSubmitted && isCorrectOpt && "bg-emerald-500/20 border-emerald-500 text-white",
-                        isSubmitted && isSelected && !isCorrectOpt && "bg-red-500/20 border-red-500 text-white",
-                        !isSelected && !isSubmitted && "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:border-white/20"
-                      )}
-                    >
-                      <div className={cn(
-                        "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm transition-all",
-                        isSelected && !isSubmitted && "bg-primary text-white",
-                        isSubmitted && isCorrectOpt && "bg-emerald-500 text-white",
-                        isSubmitted && isSelected && !isCorrectOpt && "bg-red-500 text-white",
-                        !isSelected && !isSubmitted && "bg-white/10 group-hover:bg-white/20"
-                      )}>
-                        {String.fromCharCode(65 + i)}
-                      </div>
-                      <span className="font-medium">{opt}</span>
-                      {isSubmitted && isCorrectOpt && <CheckCircle2 className="w-5 h-5 ml-auto text-emerald-400" />}
-                      {isSubmitted && isSelected && !isCorrectOpt && <XCircle className="w-5 h-5 ml-auto text-red-400" />}
-                    </button>
-                  );
-                })}
-
-                {currentQuestion.type === "TF" && ["True", "False"].map(opt => (
-                  <button
-                    key={opt}
-                    disabled={isSubmitted}
-                    onClick={() => handleSelectOption(opt)}
-                    className={cn(
-                      "p-5 rounded-2xl border transition-all flex items-center justify-center font-bold gap-3",
-                      currentAnswer === opt && !isSubmitted && "bg-primary/10 border-primary text-white",
-                      isSubmitted && opt === currentQuestion.answer && "bg-emerald-500/20 border-emerald-500 text-white",
-                      isSubmitted && currentAnswer === opt && opt !== currentQuestion.answer && "bg-red-500/20 border-red-500 text-white",
-                      currentAnswer !== opt && !isSubmitted && "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10"
-                    )}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
+            <QuestionRenderer 
+              question={currentQuestion}
+              value={currentAnswer || ""}
+              onChange={handleSelectOption}
+              disabled={isSubmitted}
+              isSubmitted={isSubmitted}
+              showExplanation={true}
+            />
 
               <AnimatePresence>
                 {isSubmitted && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="pt-6 border-t border-white/5 space-y-4">
-                    <div className={cn("p-4 rounded-xl border flex items-start gap-3", isCorrect ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400")}>
-                      {isCorrect ? <CheckCircle2 className="w-5 h-5 mt-0.5" /> : <XCircle className="w-5 h-5 mt-0.5" />}
+                    <div className={cn("p-4 rounded-xl border flex items-start gap-3", 
+                      currentQuestion.type === "Essay" ? "bg-blue-500/10 border-blue-500/20 text-blue-400" :
+                      isCorrect ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400"
+                    )}>
+                      {currentQuestion.type === "Essay" ? <ClipboardList className="w-5 h-5 mt-0.5" /> :
+                       isCorrect ? <CheckCircle2 className="w-5 h-5 mt-0.5" /> : <XCircle className="w-5 h-5 mt-0.5" />}
                       <div>
-                        <p className="font-bold text-sm">{isCorrect ? "Correct!" : "Incorrect Answer"}</p>
+                        <p className="font-bold text-sm">
+                          {currentQuestion.type === "Essay" ? "Submitted for Review" :
+                           isCorrect ? "Correct!" : "Incorrect Answer"}
+                        </p>
                         <p className="text-xs opacity-80 mt-1">
-                          {isCorrect ? "Excellent work! You've mastered this concept." : `The correct answer was ${currentQuestion.answer}.`}
+                          {currentQuestion.type === "Essay" ? "Your answer has been sent to your instructor for grading." :
+                           isCorrect ? "Excellent work! You've mastered this concept." : `The correct answer was ${currentQuestion.answer}.`}
                         </p>
                       </div>
                     </div>
@@ -304,13 +236,12 @@ export default function PracticeSolverPage() {
                         <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
                           <Info className="w-3 h-3 text-primary" /> Explanation
                         </div>
-                        <p className="text-sm text-muted-foreground leading-relaxed italic">{currentQuestion.explanation}</p>
+                        <p className="text-sm text-muted-foreground leading-relaxed italic whitespace-pre-wrap">{currentQuestion.explanation}</p>
                       </div>
                     )}
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
           </Card>
         </motion.div>
       </AnimatePresence>
@@ -351,19 +282,7 @@ export default function PracticeSolverPage() {
             </div>
             <div className="space-y-2">
               <h2 className="text-2xl font-bold">Session Complete!</h2>
-              <p className="text-muted-foreground">You've finished the practice set for Lesson {params.id}.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                <div className="text-2xl font-black text-primary">{Object.values(submitted).length}</div>
-                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Solved</div>
-              </div>
-              <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
-                <div className="text-2xl font-black text-emerald-400">
-                  {Object.entries(submitted).filter(([qid]) => answers[qid] === questions.find(q => q.id === qid)?.answer).length}
-                </div>
-                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Correct</div>
-              </div>
+              <p className="text-muted-foreground">You've finished the practice set for this lesson.</p>
             </div>
             <Button onClick={() => router.push("/practice")} className="w-full bg-primary h-12 rounded-2xl">
               Back to Curriculum <ArrowRight className="w-4 h-4 ml-2" />

@@ -34,6 +34,10 @@ export default function AtRiskPage() {
 
         snap.docs.forEach(doc => {
           const data = doc.data();
+          
+          // Skip new students with no assigned modules and no activity
+          if ((data.unlockedLessons?.length || 0) === 0 && (data.solvedQuestions || 0) === 0) return;
+
           const reasons = [];
           
           if (data.accuracy < 50) {

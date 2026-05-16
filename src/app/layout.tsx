@@ -3,6 +3,8 @@ import { Lexend, Manrope } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/providers/auth-provider";
 
+import { Toaster } from "sonner";
+
 const lexend = Lexend({
   variable: "--font-heading",
   subsets: ["latin"],
@@ -39,6 +41,7 @@ export default function RootLayout({
           <AuthProvider>
             <div className="bg-blob-primary pointer-events-none" />
             <div className="bg-blob-secondary pointer-events-none" />
+            <Toaster position="top-center" richColors />
             {children}
           </AuthProvider>
         </div>

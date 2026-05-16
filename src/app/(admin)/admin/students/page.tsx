@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, getDocs, orderBy, writeBatch, arrayRemove, deleteField, arrayUnion } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, getDocs, orderBy, writeBatch, arrayRemove, deleteField, arrayUnion, serverTimestamp } from "firebase/firestore";
+import { toast } from "sonner";
 import { createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import { db, auth, firebaseConfig } from "@/lib/firebase";
@@ -9,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus, Save, User as UserIcon, Users, BookOpen, Target, CheckCircle2, DollarSign, Upload, Trash2, Layout, CreditCard, Activity, ChevronRight, Mail, AlertTriangle } from "lucide-react";
+import { Search, Plus, UserPlus, Save, User as UserIcon, Users, BookOpen, Target, CheckCircle2, DollarSign, Upload, Trash2, Layout, CreditCard, Activity, ChevronRight, Mail, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -17,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { useLessonMap } from "@/hooks/use-lesson-map";
 
 interface Student {
   id: string;
@@ -36,17 +38,17 @@ export default function StudentsPage() {
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [lessons, setLessons] = useState<{id: number, title: string, order: number, subjectId?: string}[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
   // Forms
-  const [addForm, setAddForm] = useState({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1, initialSubject: "" });
+  const [addForm, setAddForm] = useState({ name: "", universityId: "", password: "", paid: 0, currentLesson: 0, initialSubject: "" });
   const [isBulkUploading, setIsBulkUploading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
-  const [editForm, setEditForm] = useState<{currentLesson: number, paid: number, remaining: number, unlockedLessons: number[]}>({ currentLesson: 1, paid: 0, remaining: 0, unlockedLessons: [] });
-  const [lessonMap, setLessonMap] = useState<Record<number, number>>({});
+  const [editForm, setEditForm] = useState<{currentLesson: number, paid: number, remaining: number, unlockedLessons: number[]}>({ currentLesson: 0, paid: 0, remaining: 0, unlockedLessons: [] });
   const [allSubjects, setAllSubjects] = useState<{id: string, name: string}[]>([]);
+
+  const { lessons, getLessonOrder, lessonMap } = useLessonMap();
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "subjects"), (snap) => {
@@ -56,23 +58,7 @@ export default function StudentsPage() {
   }, []);
 
   useEffect(() => {
-    // 1. Fetch lesson mapping
-    const fetchLessonMap = async () => {
-      const q = query(collection(db, "lessons"), orderBy("order", "asc"));
-      const snap = await getDocs(q);
-      const mapping: Record<number, number> = {};
-      const lList: {id: number, title: string, order: number, subjectId?: string}[] = [];
-      snap.docs.forEach((d) => {
-        const data = d.data();
-        mapping[data.id] = data.order;
-        lList.push({ id: data.id, title: data.title, order: data.order, subjectId: data.subjectId });
-      });
-      setLessonMap(mapping);
-      setLessons(lList);
-    };
-    fetchLessonMap();
-
-    // 2. Real-time students
+    // Real-time students
     const q = query(collection(db, "users"), where("role", "==", "student"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const studs: Student[] = [];
@@ -99,19 +85,24 @@ export default function StudentsPage() {
         name: addForm.name,
         email,
         role: "student",
-        currentLesson: Number(addForm.currentLesson),
+        universityId: addForm.universityId,
+        currentLesson: 0, 
+        unlockedLessons: [], // Start with NO access
         solvedQuestions: 0,
         accuracy: 0,
         paid: Number(addForm.paid),
         remaining: 0,
-        enrolledSubjects: addForm.initialSubject ? [addForm.initialSubject] : []
+        enrolledSubjects: addForm.initialSubject ? [addForm.initialSubject] : [],
+        completedLessons: [],
+        savedQuestions: [],
+        createdAt: serverTimestamp()
       });
 
       await signOut(secondaryAuth);
       await deleteApp(secondaryApp);
       
       setIsAddOpen(false);
-      setAddForm({ name: "", universityId: "", password: "", paid: 0, currentLesson: 1, initialSubject: "" });
+      setAddForm({ name: "", universityId: "", password: "", paid: 0, currentLesson: 0, initialSubject: "" });
     } catch (error) {
       console.error("Error creating student:", error);
       alert("Error creating student. See console.");
@@ -150,11 +141,16 @@ export default function StudentsPage() {
                 name: name.trim(),
                 email,
                 role: "student",
-                currentLesson: Number(currentLesson || 1),
+                universityId: universityId.trim(),
+                currentLesson: 0,
+                unlockedLessons: [], // Bulk uploads also start with NO access
                 solvedQuestions: 0,
                 accuracy: 0,
                 paid: Number(paid || 0),
-                remaining: 0
+                remaining: 0,
+                enrolledSubjects: [],
+                completedLessons: [],
+                createdAt: serverTimestamp()
               });
               
               await signOut(secondaryAuth);
@@ -189,12 +185,15 @@ export default function StudentsPage() {
   const handleSave = async () => {
     if (!selectedStudent) return;
     try {
+      const uniqueUnlocked = Array.from(new Set(editForm.unlockedLessons));
       await updateDoc(doc(db, "users", selectedStudent.id), {
-        currentLesson: Number(editForm.currentLesson),
-        unlockedLessons: editForm.unlockedLessons,
+        currentLesson: uniqueUnlocked.length,
+        unlockedLessons: uniqueUnlocked,
         paid: Number(editForm.paid),
-        remaining: Number(editForm.remaining)
+        remaining: Number(editForm.remaining),
+        updatedAt: serverTimestamp()
       });
+      toast.success("Student permissions updated!");
       setSelectedStudent(null);
     } catch (error) {
       console.error("Error updating student:", error);
@@ -317,53 +316,56 @@ export default function StudentsPage() {
 
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogContent className="bg-black/90 border-white/10 text-white p-6 max-w-md backdrop-blur-xl">
-            <DialogHeader>
-              <DialogTitle>Register New Student</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleAddStudent} className="space-y-4 pt-4">
-              <Input placeholder="Full Name" value={addForm.name} onChange={e => setAddForm({...addForm, name: e.target.value})} required className="bg-black/30 border-white/10" />
-              <Input placeholder="University ID (e.g. 2023001)" value={addForm.universityId} onChange={e => setAddForm({...addForm, universityId: e.target.value})} required className="bg-black/30 border-white/10" />
-              <Input placeholder="Password" type="password" value={addForm.password} onChange={e => setAddForm({...addForm, password: e.target.value})} required className="bg-black/30 border-white/10" />
-              <div className="flex gap-4">
-                <div className="flex-1 space-y-2">
-                  <label className="text-xs text-muted-foreground uppercase">Initial Module</label>
-                  <select 
-                    value={addForm.currentLesson} 
-                    onChange={e => setAddForm({...addForm, currentLesson: Number(e.target.value)})}
-                    className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-sm text-white"
-                  >
-                    {lessons.map((l) => (
-                      <option key={l.id} value={l.id}>Module {l.order}: {l.title}</option>
-                    ))}
-                    {lessons.length === 0 && <option value={1}>No lessons found</option>}
-                  </select>
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-primary" />
+                  Register New Student
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleAddStudent} className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Full Name</label>
+                  <Input placeholder="e.g. John Doe" value={addForm.name} onChange={e => setAddForm({...addForm, name: e.target.value})} required className="bg-black/30 border-white/10" />
                 </div>
-                <div className="flex-1 space-y-2">
-                  <label className="text-xs text-muted-foreground uppercase">Paid Amount ($)</label>
-                  <Input placeholder="Paid Amount" type="number" value={addForm.paid} onChange={e => setAddForm({...addForm, paid: Number(e.target.value)})} className="bg-black/30 border-white/10" />
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">University ID</label>
+                  <Input placeholder="e.g. 2023001" value={addForm.universityId} onChange={e => setAddForm({...addForm, universityId: e.target.value})} required className="bg-black/30 border-white/10" />
                 </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs text-muted-foreground uppercase">Initial Subject Enrollment</label>
-                <Select 
-                  value={addForm.initialSubject} 
-                  onValueChange={(val: string | null) => setAddForm({...addForm, initialSubject: val || ""})}
-                >
-                  <SelectTrigger className="w-full bg-black/30 border-white/10 text-white">
-                    <SelectValue placeholder="Select a subject (Optional)" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#0B1220] border-white/10 text-white">
-                    <SelectItem value="none">None</SelectItem>
-                    {allSubjects.map(s => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90">Create Account</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Password</label>
+                  <Input placeholder="Min. 6 characters" type="password" value={addForm.password} onChange={e => setAddForm({...addForm, password: e.target.value})} required className="bg-black/30 border-white/10" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Initial Subject</label>
+                    <Select onValueChange={(val: string | null) => val && setAddForm({...addForm, initialSubject: val})}>
+                      <SelectTrigger className="bg-black/30 border-white/10">
+                        <SelectValue placeholder="Select" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#0B1220] border-white/10 text-white">
+                        <SelectItem value="none">None</SelectItem>
+                        {allSubjects.map(s => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-muted-foreground uppercase">Paid Amount ($)</label>
+                    <Input type="number" value={addForm.paid} onChange={e => setAddForm({...addForm, paid: Number(e.target.value)})} className="bg-black/30 border-white/10" />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-primary/5 border border-primary/10 text-[10px] text-primary/70 uppercase font-bold tracking-widest text-center mt-2">
+                  Access: ALL lessons will be LOCKED by default
+                </div>
+
+                <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-white font-bold h-12 rounded-xl mt-4">
+                  Create Student Account
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -415,9 +417,9 @@ export default function StudentsPage() {
                   </Button>
 
                 <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/10 text-sm relative z-10">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <BookOpen className="w-4 h-4 text-primary" />
-                    <span>Mod {lessonMap[student.currentLesson] || student.currentLesson}</span>
+                  <div className="flex items-center gap-2 text-muted-foreground group/info">
+                    <BookOpen className="w-4 h-4 text-primary group-hover/info:scale-110 transition-transform" />
+                    <span className="font-bold text-white/90">Mod {student.unlockedLessons?.length || 0}</span>
                   </div>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Target className="w-4 h-4 text-emerald-400" />

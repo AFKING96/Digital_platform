@@ -8,11 +8,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Edit2, ClipboardList, Clock, Save, Image as ImageIcon, Link as LinkIcon, HelpCircle, X, Check, Calendar } from "lucide-react";
+import { Plus, Trash2, Edit2, ClipboardList, Clock, Save, Image as ImageIcon, Link as LinkIcon, HelpCircle, X, Check, Calendar, BarChart3 } from "lucide-react";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
-import { BarChart3 } from "lucide-react";
+import { QuestionRenderer } from "@/components/questions/QuestionRenderer";
 import {
   Select,
   SelectContent,
@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useLessonMap } from "@/hooks/use-lesson-map";
 
 interface Homework {
   id: string;
@@ -28,6 +29,7 @@ interface Homework {
   content: string;
   options?: string[];
   answer?: string;
+  expectedAnswer?: string;
   explanation?: string;
   imageUrl?: string;
   link?: string;
@@ -36,18 +38,10 @@ interface Homework {
   createdAt: any;
 }
 
-interface Lesson {
-  id: number;
-  title: string;
-  order: number;
-}
-
 export default function HomeworkAdminPage() {
-  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const { lessons, loading: lessonsLoading } = useLessonMap();
   const [homeworks, setHomeworks] = useState<Homework[]>([]);
   const [selectedLessonId, setSelectedLessonId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -56,6 +50,7 @@ export default function HomeworkAdminPage() {
     content: "",
     options: ["", "", "", ""],
     answer: "",
+    expectedAnswer: "",
     explanation: "",
     imageUrl: "",
     link: "",
@@ -67,21 +62,18 @@ export default function HomeworkAdminPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    // Fetch Lessons
-    const unsubLessons = onSnapshot(query(collection(db, "lessons"), orderBy("order", "asc")), (snap) => {
-      const data = snap.docs.map(d => ({ id: d.data().id, title: d.data().title, order: d.data().order }));
-      setLessons(data);
-      if (data.length > 0 && !selectedLessonId) setSelectedLessonId(data[0].id);
-      setLoading(false);
-    });
+    if (lessons.length > 0 && !selectedLessonId) {
+      setSelectedLessonId(lessons[0].id);
+    }
+  }, [lessons, selectedLessonId]);
 
+  useEffect(() => {
     // Fetch All Homework
     const unsubHomework = onSnapshot(query(collection(db, "homework_questions"), orderBy("order", "asc")), (snap) => {
       setHomeworks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Homework)));
     });
 
     return () => {
-      unsubLessons();
       unsubHomework();
     };
   }, []);
@@ -110,12 +102,27 @@ export default function HomeworkAdminPage() {
     }
   };
 
+  const addOption = () => {
+    const newOpts = [...(form.options || [])];
+    newOpts.push("");
+    setForm({...form, options: newOpts});
+  };
+
+  const removeOption = (idx: number) => {
+    const newOpts = [...(form.options || [])];
+    if (newOpts.length > 2) {
+      newOpts.splice(idx, 1);
+      setForm({...form, options: newOpts});
+    }
+  };
+
   const resetForm = () => {
     setForm({
       type: "MCQ",
       content: "",
       options: ["", "", "", ""],
       answer: "",
+      expectedAnswer: "",
       explanation: "",
       imageUrl: "",
       link: "",
@@ -134,7 +141,7 @@ export default function HomeworkAdminPage() {
     finally { setIsDeleting(false); }
   };
 
-  if (loading) return <div className="p-8"><Skeleton className="h-64 w-full bg-white/5" /></div>;
+  if (lessonsLoading) return <div className="p-8"><Skeleton className="h-64 w-full bg-white/5" /></div>;
 
   const currentLessonHomework = homeworks.filter(h => h.lessonId === selectedLessonId);
 
@@ -158,7 +165,7 @@ export default function HomeworkAdminPage() {
             <SelectContent>
               {lessons.map(l => (
                 <SelectItem key={l.id} value={l.id.toString()}>
-                  Lesson {l.order}: {l.title}
+                  {l.title}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -219,24 +226,44 @@ export default function HomeworkAdminPage() {
 
                     {form.type === "MCQ" && (
                       <div className="space-y-3">
-                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1 text-emerald-400">Answer Options</label>
+                        <div className="flex items-center justify-between px-1">
+                          <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1 text-emerald-400">Answer Options</label>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={addOption}
+                            className="h-6 text-[10px] font-black uppercase tracking-wider text-emerald-500 hover:bg-emerald-500/10"
+                          >
+                            <Plus className="w-3 h-3 mr-1" /> Add Option
+                          </Button>
+                        </div>
                         {form.options?.map((opt, i) => (
-                          <div key={i} className="flex gap-2">
+                          <div key={i} className="flex gap-2 group/opt">
                             <div className={`w-8 h-10 flex items-center justify-center rounded-lg font-bold border transition-all ${
                               form.answer === opt && opt !== "" ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400" : "bg-white/5 border-white/10 text-muted-foreground"
                             }`}>
                               {String.fromCharCode(65 + i)}
                             </div>
-                            <Input 
-                              placeholder={`Option ${i + 1}`} 
-                              value={opt}
-                              onChange={e => {
-                                const newOpts = [...(form.options || [])];
-                                newOpts[i] = e.target.value;
-                                setForm({...form, options: newOpts});
-                              }}
-                              className="bg-black/30"
-                            />
+                            <div className="flex-1 relative">
+                              <Input 
+                                placeholder={`Option ${i + 1}`} 
+                                value={opt}
+                                onChange={e => {
+                                  const newOpts = [...(form.options || [])];
+                                  newOpts[i] = e.target.value;
+                                  setForm({...form, options: newOpts});
+                                }}
+                                className="bg-black/30 pr-10"
+                              />
+                              {form.options!.length > 2 && (
+                                <button 
+                                  onClick={() => removeOption(i)}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-red-400 opacity-0 group-hover/opt:opacity-100 transition-opacity"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
                             <Button 
                               variant="ghost" 
                               size="icon"
@@ -274,6 +301,21 @@ export default function HomeworkAdminPage() {
                       />
                     </div>
 
+                    {form.type === "Essay" && (
+                      <div className="space-y-2 p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl">
+                        <label className="text-xs font-bold text-emerald-400 uppercase tracking-widest px-1">Expected Answer / Model Solution</label>
+                        <Textarea 
+                          placeholder="Write the ideal answer or solving method here... This will be shown to students AFTER they submit their response." 
+                          value={form.expectedAnswer}
+                          onChange={e => setForm({...form, expectedAnswer: e.target.value})}
+                          className="bg-black/30 min-h-[150px]"
+                        />
+                        <p className="text-[10px] text-muted-foreground italic px-1">
+                          This is used for student self-comparison and review.
+                        </p>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Attachment (Image URL)</label>
@@ -310,7 +352,7 @@ export default function HomeworkAdminPage() {
           <div className="flex items-center justify-between px-2">
             <h2 className="font-bold flex items-center gap-2">
               <ClipboardList className="w-4 h-4 text-emerald-400" />
-              Lesson {selectedLessonId} Homework
+              {lessons.find(l => l.id === selectedLessonId)?.title || "Lesson"} Homework
             </h2>
             <span className="text-xs text-muted-foreground font-medium">{currentLessonHomework.length} Assignments</span>
           </div>
@@ -326,19 +368,18 @@ export default function HomeworkAdminPage() {
                     <div className="w-0.5 h-full bg-gradient-to-b from-white/10 to-transparent" />
                   </div>
 
-                  <div className="flex-1 space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">{h.type}</span>
-                          {h.deadline && (
-                            <span className="text-[10px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded flex items-center gap-1">
-                              <Clock className="w-2.5 h-2.5" /> 
-                              {new Date(h.deadline?.toDate ? h.deadline.toDate() : h.deadline).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-white font-medium text-lg leading-snug">{h.content}</p>
+                  <div className="flex-1 space-y-4 relative">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          {h.type}
+                        </span>
+                        {h.deadline && (
+                          <span className="text-[10px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5" /> 
+                            {new Date(h.deadline?.toDate ? h.deadline.toDate() : h.deadline).toLocaleString()}
+                          </span>
+                        )}
                       </div>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/5" onClick={() => {
@@ -351,6 +392,17 @@ export default function HomeworkAdminPage() {
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
+                    </div>
+
+                    <div className="pointer-events-none opacity-80 scale-[0.95] origin-top-left -mb-6">
+                      <QuestionRenderer 
+                        question={h}
+                        value={h.answer || ""}
+                        onChange={() => {}}
+                        isSubmitted={true}
+                        showExplanation={true}
+                        disabled={true}
+                      />
                     </div>
 
                     <div className="flex items-center gap-6 pt-2">

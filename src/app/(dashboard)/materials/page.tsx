@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { collection, query, onSnapshot, orderBy, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { useAuth } from "@/components/providers/auth-provider";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -54,17 +55,18 @@ export default function MaterialsStudentPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [userData, setUserData] = useState<any>(null);
 
+  const { user } = useAuth();
+
   useEffect(() => {
-    const fetchUser = async () => {
-      const { auth } = await import("@/lib/firebase");
-      if (auth.currentUser) {
-        const userDoc = await getDocs(query(collection(db, "users"), where("__name__", "==", auth.currentUser.uid)));
-        if (!userDoc.empty) {
-          setUserData(userDoc.docs[0].data());
-        }
+    if (!user) return;
+    
+    // Fetch User
+    const unsubUser = onSnapshot(query(collection(db, "users"), where("__name__", "==", user.uid)), (snap) => {
+      if (!snap.empty) {
+        setUserData(snap.docs[0].data());
       }
-    };
-    fetchUser();
+    });
+
     // Fetch Collections
     const unsubCol = onSnapshot(query(collection(db, "material_collections"), orderBy("createdAt", "desc")), (snap) => {
       setCollections(snap.docs.map(d => ({ id: d.id, ...d.data() } as MaterialCollection)));
@@ -82,6 +84,7 @@ export default function MaterialsStudentPage() {
     });
 
     return () => {
+      unsubUser();
       unsubCol();
       unsubMat();
       unsubLessons();

@@ -40,6 +40,7 @@ interface Question {
   answer: string;
   options?: string[];
   lessonId: number;
+  lessonTitle?: string;
 }
 
 export default function QuestionAnalyticsPage() {
@@ -62,7 +63,15 @@ export default function QuestionAnalyticsPage() {
       
       if (qDoc.exists()) {
         const qData = qDoc.data();
-        setQuestion({ id: qDoc.id, ...qData } as Question);
+        let lessonTitle = "";
+        
+        // Fetch Lesson Title
+        const lSnap = await getDocs(query(collection(db, "lessons"), where("id", "==", qData.lessonId)));
+        if (!lSnap.empty) {
+          lessonTitle = lSnap.docs[0].data().title;
+        }
+
+        setQuestion({ id: qDoc.id, ...qData, lessonTitle } as Question);
 
         // Fetch Total Enrolled Students for this question's subject
         try {
@@ -143,13 +152,13 @@ export default function QuestionAnalyticsPage() {
                   {question.type}
                 </span>
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                  Lesson {question.lessonId}
+                  {question.lessonTitle || `Lesson ${question.lessonId}`}
                 </span>
               </div>
-              <h1 className="text-2xl font-bold leading-tight">{question.content}</h1>
+              <h1 className="text-2xl font-bold leading-tight whitespace-pre-wrap">{question.content}</h1>
               <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
                  <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1">Correct Answer</p>
-                 <p className="text-lg font-bold text-white">{question.answer}</p>
+                 <p className="text-lg font-bold text-white whitespace-pre-wrap">{question.answer}</p>
               </div>
             </div>
           </Card>
@@ -196,7 +205,7 @@ export default function QuestionAnalyticsPage() {
                           )}>
                             {String.fromCharCode(65 + i)}
                           </div>
-                          <span className={cn("text-sm font-medium", isCorrect && "text-emerald-400 font-bold")}>{opt}</span>
+                          <span className={cn("text-sm font-medium whitespace-pre-wrap", isCorrect && "text-emerald-400 font-bold")}>{opt}</span>
                         </div>
                         <div className="text-xs font-bold">{count} ({Math.round(percent)}%)</div>
                       </div>

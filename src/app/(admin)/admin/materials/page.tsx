@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { collection, query, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, orderBy, where, writeBatch } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, orderBy, where, writeBatch, addDoc } from "firebase/firestore";
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
+import { db, storage } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from "sonner";
 
 const getFormat = (type: string | undefined | null): FormatFileProps => {
   if (!type) return "pdf";
@@ -77,6 +79,7 @@ export default function MaterialsPage() {
   const [isAddingMaterial, setIsAddingMaterial] = useState(false);
   const [materialForm, setMaterialForm] = useState({ title: "", lessonId: "" as any, link: "" });
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string, type: 'collection' | 'material' } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -190,42 +193,93 @@ export default function MaterialsPage() {
 
   const handleSaveMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCollectionId) return;
+    if (!selectedCollectionId || uploading) return;
+    
+    // Validate inputs early
+    if (!materialForm.title.trim()) {
+      toast.error("Please provide a title for the material.");
+      return;
+    }
+
+    if (!fileToUpload && !materialForm.link.trim()) {
+      toast.error("Please either upload a file or provide an external link.");
+      return;
+    }
     
     setUploading(true);
+    setUploadProgress(0);
+    
     try {
-      let filePath = materialForm.link;
-      let fileExt = 'link';
+      let finalPath = "";
+      let fileExt = "link";
 
+      // Case 1: File Upload (Prioritized)
       if (fileToUpload) {
-        const formData = new FormData();
-        formData.append("file", fileToUpload);
-        const res = await fetch("/api/upload", { method: "POST", body: formData });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error);
-        filePath = data.path;
         fileExt = fileToUpload.name.split('.').pop()?.toLowerCase() || 'file';
+        const sanitizedName = fileToUpload.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const storagePath = `materials/${Date.now()}-${sanitizedName}`;
+        const storageRef = ref(storage, storagePath);
+        
+        const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
+
+        finalPath = await new Promise((resolve, reject) => {
+          const unsub = uploadTask.on('state_changed', 
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              setUploadProgress(progress);
+            }, 
+            (error) => {
+              console.error("Firebase Storage Error:", error);
+              unsub();
+              reject(new Error(`Storage error: ${error.message}`));
+            }, 
+            async () => {
+              try {
+                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                unsub();
+                resolve(downloadURL);
+              } catch (err: any) {
+                reject(new Error(`Failed to get download URL: ${err.message}`));
+              }
+            }
+          );
+        });
+      } else {
+        // Case 2: External Link
+        finalPath = materialForm.link.trim();
+        fileExt = "link";
       }
 
-      if (!filePath) throw new Error("File or link required");
+      // Final check
+      if (!finalPath) throw new Error("Could not determine file path.");
 
-      const id = Date.now().toString();
-      await setDoc(doc(db, "materials", id), {
-        title: materialForm.title,
-        path: filePath,
+      // Prepare metadata
+      const materialData = {
+        title: materialForm.title.trim(),
+        path: finalPath,
         collectionId: selectedCollectionId,
         lessonId: materialForm.lessonId ? Number(materialForm.lessonId) : null,
         fileType: fileExt,
         createdAt: serverTimestamp(),
-        subjectId: selectedSubjectId
-      });
+        updatedAt: serverTimestamp(),
+        subjectId: selectedSubjectId || null,
+        uploadedBy: "admin" // For audit trail
+      };
 
+      // Write to Firestore - use addDoc for reliability
+      const matRef = collection(db, "materials");
+      await addDoc(matRef, materialData);
+
+      // Success sequence
+      toast.success("Material added successfully!");
       setIsAddingMaterial(false);
       setMaterialForm({ title: "", lessonId: "", link: "" });
       setFileToUpload(null);
-    } catch (e) {
-      console.error(e);
-      alert("Failed to save material.");
+      setUploadProgress(0);
+      
+    } catch (error: any) {
+      console.error("Material Upload Critical Failure:", error);
+      toast.error(error.message || "A network error occurred during upload.");
     } finally {
       setUploading(false);
     }
@@ -237,14 +291,15 @@ export default function MaterialsPage() {
     try {
       if (deleteTarget.type === 'collection') {
         const batch = writeBatch(db);
-        // Delete all materials in collection
         const matsToDelete = materials.filter(m => m.collectionId === deleteTarget.id);
         for (const m of matsToDelete) {
           batch.delete(doc(db, "materials", m.id));
-          // Try to delete physical file if it's a local path
-          if (m.path.startsWith('/materials/')) {
-            const fileName = m.path.split('/').pop();
-            fetch(`/api/upload?file=${fileName}`, { method: "DELETE" }).catch(console.error);
+          // Delete from storage if it's a firebase storage URL
+          if (m.path.includes('firebasestorage.googleapis.com')) {
+            try {
+              const storageRef = ref(storage, m.path);
+              await deleteObject(storageRef);
+            } catch (err) { console.error("Error deleting file from storage:", err); }
           }
         }
         batch.delete(doc(db, "material_collections", deleteTarget.id));
@@ -252,9 +307,11 @@ export default function MaterialsPage() {
         if (selectedCollectionId === deleteTarget.id) setSelectedCollectionId(null);
       } else {
         const mat = materials.find(m => m.id === deleteTarget.id);
-        if (mat?.path.startsWith('/materials/')) {
-          const fileName = mat.path.split('/').pop();
-          await fetch(`/api/upload?file=${fileName}`, { method: "DELETE" }).catch(console.error);
+        if (mat?.path.includes('firebasestorage.googleapis.com')) {
+          try {
+            const storageRef = ref(storage, mat.path);
+            await deleteObject(storageRef);
+          } catch (err) { console.error("Error deleting file from storage:", err); }
         }
         await deleteDoc(doc(db, "materials", deleteTarget.id));
       }
@@ -442,8 +499,33 @@ export default function MaterialsPage() {
 
                       <div className="flex justify-end gap-3">
                         <Button type="button" variant="ghost" onClick={() => setIsAddingMaterial(false)}>Cancel</Button>
-                        <Button type="submit" disabled={uploading || (!fileToUpload && !materialForm.link)}>
-                          {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : "Save Material"}
+                        <Button 
+                          type="submit" 
+                          disabled={uploading || (!fileToUpload && !materialForm.link)} 
+                          className="relative overflow-hidden min-w-[160px] bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20"
+                        >
+                          {uploading ? (
+                            <div className="flex flex-col items-center py-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span className="text-[10px] font-bold uppercase tracking-tighter">
+                                  {uploadProgress < 100 ? "Uploading..." : "Processing..."}
+                                </span>
+                              </div>
+                              <div className="w-24 h-1 bg-white/20 rounded-full overflow-hidden">
+                                <motion.div 
+                                  className="h-full bg-white shadow-[0_0_8px_white]"
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${uploadProgress}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Check className="w-4 h-4" />
+                              <span>Publish Material</span>
+                            </div>
+                          )}
                         </Button>
                       </div>
                     </form>

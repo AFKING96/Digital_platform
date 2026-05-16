@@ -16,6 +16,7 @@ interface Lesson {
   id: number;
   title: string;
   summary: string[];
+  order: number;
 }
 
 export default function LessonPage() {
@@ -24,7 +25,6 @@ export default function LessonPage() {
   const { user } = useAuth();
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [userData, setUserData] = useState<any>(null);
-  const [displayNumber, setDisplayNumber] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
 
@@ -52,16 +52,6 @@ export default function LessonPage() {
       }
       setLoading(false);
     });
-
-    // 2. Fetch lesson order (usually doesn't change during session, but good to have)
-    const fetchOrder = async () => {
-      const q = query(collection(db, "lessons"), where("id", "==", Number(params.id)));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        setDisplayNumber(snap.docs[0].data().order);
-      }
-    };
-    fetchOrder();
 
     const savedNotes = localStorage.getItem(`lesson_notes_${params.id}`);
     if (savedNotes) setNotes(savedNotes);
@@ -127,7 +117,7 @@ export default function LessonPage() {
           
           <div className="relative z-10 space-y-6">
             <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-              Module {displayNumber || lesson.id}
+              Module {lesson.order || lesson.id}
             </div>
             
             <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">

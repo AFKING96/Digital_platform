@@ -8,9 +8,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Save, Trash2, CheckSquare, Link as LinkIcon, Type, List, CheckCircle2, Wand2 } from "lucide-react";
+import { Plus, Save, Trash2, CheckSquare, Link as LinkIcon, Type, List, CheckCircle2, Wand2, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
+import { useLessonMap } from "@/hooks/use-lesson-map";
 
 interface Question {
   id: number;
@@ -18,6 +19,7 @@ interface Question {
   question: string;
   options?: string[];
   correctAnswer?: string;
+  expectedAnswer?: string;
 }
 
 interface Quiz {
@@ -27,7 +29,7 @@ interface Quiz {
 }
 
 export default function QuizzesPage() {
-  const [lessons, setLessons] = useState<{id: number, title: string}[]>([]);
+  const { lessons } = useLessonMap();
   const [selectedLesson, setSelectedLesson] = useState<string>("");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [formLink, setFormLink] = useState("");
@@ -81,17 +83,6 @@ export default function QuizzesPage() {
   };
 
   useEffect(() => {
-    const loadLessons = async () => {
-      const q = query(collection(db, "lessons"), orderBy("id", "asc"));
-      const snapshot = await getDocs(q);
-      const data: any[] = [];
-      snapshot.forEach(doc => data.push({ id: doc.data().id, title: doc.data().title }));
-      setLessons(data);
-    };
-    loadLessons();
-  }, []);
-
-  useEffect(() => {
     if (!selectedLesson) return;
     const q = query(collection(db, "quizzes"), where("lessonId", "==", selectedLesson));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -137,6 +128,22 @@ export default function QuizzesPage() {
       updated[qIndex].options![optIndex] = value;
     }
     setQuestions(updated);
+  };
+
+  const addOption = (qIndex: number) => {
+    const updated = [...questions];
+    if (updated[qIndex].options) {
+      updated[qIndex].options!.push("");
+      setQuestions(updated);
+    }
+  };
+
+  const removeOption = (qIndex: number, optIndex: number) => {
+    const updated = [...questions];
+    if (updated[qIndex].options && updated[qIndex].options!.length > 2) {
+      updated[qIndex].options!.splice(optIndex, 1);
+      setQuestions(updated);
+    }
   };
 
   const removeQuestion = (index: number) => {
@@ -202,7 +209,7 @@ export default function QuizzesPage() {
           </SelectTrigger>
           <SelectContent className="bg-[#0B1220] border-white/10 text-white">
             {lessons.map(l => (
-              <SelectItem key={l.id} value={l.id.toString()}>Module {l.id}: {l.title}</SelectItem>
+              <SelectItem key={l.id} value={l.id.toString()}>{l.title}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -294,20 +301,38 @@ export default function QuizzesPage() {
                     />
 
                     {q.type === "mcq" && q.options && (
-                      <div className="grid md:grid-cols-2 gap-3 pl-11">
-                        {q.options.map((opt, oIndex) => (
-                          <div key={oIndex} className="relative">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded bg-white/5 border border-white/10 flex items-center justify-center text-[10px] text-muted-foreground">
-                              {String.fromCharCode(65 + oIndex)}
+                      <div className="space-y-3 pl-11">
+                        <div className="grid md:grid-cols-2 gap-3">
+                          {q.options.map((opt, oIndex) => (
+                            <div key={oIndex} className="relative group/opt">
+                              <div className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded bg-white/5 border border-white/10 flex items-center justify-center text-[10px] text-muted-foreground">
+                                {String.fromCharCode(65 + oIndex)}
+                              </div>
+                              <Input 
+                                placeholder={`Option ${oIndex + 1}`} 
+                                value={opt} 
+                                onChange={e => updateOption(index, oIndex, e.target.value)} 
+                                className="bg-black/20 border-white/5 text-sm pl-10 pr-10"
+                              />
+                              {q.options!.length > 2 && (
+                                <button 
+                                  onClick={() => removeOption(index, oIndex)}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-red-400 opacity-0 group-hover/opt:opacity-100 transition-opacity"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
                             </div>
-                            <Input 
-                              placeholder={`Option ${oIndex + 1}`} 
-                              value={opt} 
-                              onChange={e => updateOption(index, oIndex, e.target.value)} 
-                              className="bg-black/20 border-white/5 text-sm pl-10"
-                            />
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => addOption(index)}
+                          className="text-[10px] font-bold uppercase tracking-widest text-primary hover:bg-primary/10"
+                        >
+                          <Plus className="w-3 h-3 mr-1" /> Add Option
+                        </Button>
                       </div>
                     )}
 
@@ -334,6 +359,18 @@ export default function QuizzesPage() {
                             className="bg-black/30 border-green-500/30 focus:border-green-500 flex-1 placeholder:text-muted-foreground/50"
                           />
                         )}
+                      </div>
+                    )}
+
+                    {q.type === "essay" && (
+                      <div className="pl-11 space-y-2">
+                        <label className="text-[10px] font-bold text-primary uppercase tracking-widest px-1">Expected Answer / Model Solution</label>
+                        <Textarea 
+                          placeholder="Write the ideal answer here... This will be shown to students AFTER submission." 
+                          value={q.expectedAnswer || ""}
+                          onChange={(e) => updateQuestion(index, "expectedAnswer", e.target.value)}
+                          className="bg-black/40 border-primary/20 min-h-[100px] text-sm"
+                        />
                       </div>
                     )}
                   </Card>

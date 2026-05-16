@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { doc, getDoc, collection, getDocs, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { useAuth } from "@/components/providers/auth-provider";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,21 +49,23 @@ export default function DashboardPage() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
 
+  const { user } = useAuth();
+
   useEffect(() => {
-    if (!auth.currentUser) {
+    if (!user) {
       setLoading(false);
       return;
     }
 
     // 1. Real-time User Data
-    const userUnsubscribe = onSnapshot(doc(db, "users", auth.currentUser.uid), (docSnap) => {
+    const userUnsubscribe = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
       if (docSnap.exists()) {
         setUserData(docSnap.data() as UserData);
       }
     });
 
     // 3. Real-time Submissions count
-    const subsQuery = query(collection(db, "submissions"), where("userId", "==", auth.currentUser.uid));
+    const subsQuery = query(collection(db, "submissions"), where("userId", "==", user.uid));
     const subsUnsubscribe = onSnapshot(subsQuery, (snapshot) => {
       setSubmissionsCount(snapshot.size);
     });
@@ -71,7 +74,7 @@ export default function DashboardPage() {
       userUnsubscribe();
       subsUnsubscribe();
     };
-  }, []);
+  }, [user]);
 
   // Fetch subjects when userData.enrolledSubjects changes
   useEffect(() => {
@@ -165,22 +168,35 @@ export default function DashboardPage() {
   }
 
   // Guard: currentLesson may be missing from Firestore — default to 1
-  const currentLesson = (userData?.unlockedLessons?.length ?? 0) > 0 
-    ? userData!.unlockedLessons![userData!.unlockedLessons!.length - 1] 
-    : (userData?.currentLesson ?? 1);
-  const currentLessonIdx = lessons.findIndex(l => l.id === currentLesson);
-  const currentLessonDisplayNumber = currentLessonIdx !== -1 ? currentLessonIdx + 1 : (lessons.length > 0 ? 1 : currentLesson);
+  // Refined: Find the latest unlocked lesson that belongs to the current subject
+  const currentLessonId = useMemo(() => {
+    if (!userData?.unlockedLessons || userData.unlockedLessons.length === 0 || lessons.length === 0) return null;
+    
+    // Filter unlocked lessons to only those in the current subject's lessons list
+    const unlockedInSubject = userData.unlockedLessons.filter(id => lessons.some(l => l.id === id));
+    
+    if (unlockedInSubject.length > 0) {
+      return unlockedInSubject[unlockedInSubject.length - 1];
+    }
+    
+    return null;
+  }, [userData?.unlockedLessons, lessons]);
+
+  const currentLessonData = lessons.find(l => l.id === currentLessonId);
+  const currentLessonIdx = currentLessonId ? lessons.findIndex(l => l.id === currentLessonId) : -1;
+  const currentLessonDisplayNumber = currentLessonIdx !== -1 ? currentLessonIdx + 1 : 0;
   
-  const currentLessonData = lessons.find(l => l.id === currentLesson);
-  const isHeroUnlocked = currentLessonData 
-    ? (userData?.unlockedLessons ? userData.unlockedLessons.includes(currentLesson) : false) 
+  const isHeroUnlocked = (currentLessonData && currentLessonId !== null)
+    ? (userData?.unlockedLessons ? userData.unlockedLessons.includes(currentLessonId) : false) 
     : false;
+
   const currentLessonTitle = currentLessonData?.title 
     ? `Module ${currentLessonDisplayNumber}: ${currentLessonData.title}` 
     : `Module ${currentLessonDisplayNumber}`;
   
   const completedCount = userData?.completedLessons?.length || 0;
-  const progressPercentage = lessons.length > 0 ? Math.round((completedCount / lessons.length) * 100) : 0;
+  const unlockedCount = userData?.unlockedLessons?.length || 0;
+  const progressPercentage = unlockedCount > 0 ? Math.round((completedCount / unlockedCount) * 100) : 0;
 
   if (subjects.length > 0 && !selectedSubjectId) {
     return (
@@ -253,69 +269,80 @@ export default function DashboardPage() {
       )}
       <ContainerScroll
         titleComponent={
-          <div className="flex flex-col gap-6 mb-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8 mb-8">
             <div className="flex flex-col gap-2">
-              <h1 className="text-5xl font-bold tracking-tight">
+              <h1 className="text-4xl md:text-6xl font-bold tracking-tight">
                 Welcome back, <br/>
-                <span className="text-primary">{userData?.name || "Student"}</span>
+                <span className="text-primary bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">{userData?.name || "Student"}</span>
               </h1>
-              <p className="text-muted-foreground text-xl">Here&apos;s your progress overview.</p>
+              <p className="text-muted-foreground text-lg md:text-xl">You&apos;re doing great! Here&apos;s your progress overview.</p>
             </div>
             
-            <div className="max-w-md w-full space-y-2">
+            <div className="max-w-xs w-full space-y-3 bg-white/5 p-6 rounded-[32px] border border-white/10 backdrop-blur-xl">
               <div className="flex justify-between text-sm mb-1">
-                <span className="text-muted-foreground font-medium">Overall Progress</span>
-                <span className="text-primary font-bold">{progressPercentage}%</span>
+                <span className="text-muted-foreground font-bold uppercase tracking-wider text-[10px]">Course Progress</span>
+                <span className="text-primary font-black">{progressPercentage}%</span>
               </div>
-              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
                 <motion.div 
                   initial={{ width: 0 }}
                   animate={{ width: `${progressPercentage}%` }}
-                  transition={{ duration: 1, ease: "easeOut" }}
-                  className="h-full bg-primary shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                  transition={{ duration: 1.5, ease: "easeOut" }}
+                  className="h-full bg-primary shadow-[0_0_20px_rgba(59,130,246,0.6)]"
                 />
               </div>
             </div>
           </div>
         }
       >
-        <div className="h-full w-full flex flex-col justify-center items-center relative overflow-hidden bg-gradient-to-br from-[#0B1220] to-[#040810] p-6 md:p-10 text-center space-y-6">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 p-12 opacity-5 pointer-events-none">
-            <PlayCircle className="w-[30rem] h-[30rem] text-primary" />
-          </div>
+        <div className="h-full w-full flex flex-col justify-center items-center relative overflow-hidden bg-gradient-to-br from-[#0B1220] to-[#040810] p-8 md:p-16 text-center space-y-8">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.1),transparent)] pointer-events-none" />
           
-          <div className="relative z-10 flex flex-col items-center gap-6">
-            <div className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-semibold ${!isHeroUnlocked ? "border-amber-500/30 bg-amber-500/10 text-amber-500" : "border-primary/30 bg-primary/10 text-primary"}`}>
-              {!isHeroUnlocked ? <Lock className="w-3 h-3 mr-2" /> : null}
-              Current Lesson
-            </div>
-            <h2 className="text-4xl md:text-5xl font-bold text-white">{currentLessonTitle}</h2>
-            <p className="text-lg text-white/70 max-w-lg">
-              Follow your lesson workflow to master the material.
-            </p>
+          <div className="relative z-10 flex flex-col items-center gap-8">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className={`inline-flex items-center rounded-full border px-4 py-1.5 text-xs font-black uppercase tracking-[0.2em] shadow-lg ${!isHeroUnlocked ? "border-amber-500/30 bg-amber-500/10 text-amber-500" : "border-primary/30 bg-primary/10 text-primary"}`}
+            >
+              {!isHeroUnlocked ? <Lock className="w-3.5 h-3.5 mr-2" /> : <Star className="w-3.5 h-3.5 mr-2 fill-primary" />}
+              {!isHeroUnlocked ? "Locked Content" : "Active Module"}
+            </motion.div>
             
-            <div className="flex flex-wrap justify-center gap-4 mt-4">
-              <Link href={`/materials`} className={!isHeroUnlocked ? "pointer-events-none opacity-50" : ""}>
-                <Button variant="outline" className="border-white/10 hover:bg-white/5 h-14 px-6 rounded-2xl flex items-center gap-2 group" disabled={!isHeroUnlocked}>
-                  <BookOpen className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
-                  Materials
+            <div className="space-y-4">
+              <h2 className="text-5xl md:text-7xl font-black text-white leading-tight tracking-tight">
+                {currentLessonId ? (currentLessonData?.title || `Module ${currentLessonDisplayNumber}`) : "No Active Module"}
+              </h2>
+              <p className="text-xl text-white/60 max-w-2xl mx-auto font-medium">
+                {currentLessonId ? (currentLessonData?.summary?.[0] || "Dive into today's module and expand your knowledge with interactive content.") : "Your instructor hasn't unlocked any modules for you yet. Check back soon!"}
+              </p>
+            </div>
+            
+            <div className="flex flex-wrap justify-center gap-6 mt-6">
+              <Link href={`/lesson/${currentLessonId}`} className={!isHeroUnlocked ? "pointer-events-none opacity-50" : ""}>
+                <Button className={`${!isHeroUnlocked ? "bg-white/10" : "bg-primary hover:bg-primary/90 text-white shadow-[0_0_40px_rgba(var(--primary),0.4)]"} h-20 px-12 rounded-[28px] text-lg font-black flex items-center gap-4 transition-all hover:scale-105 active:scale-95 group`} disabled={!isHeroUnlocked}>
+                  <PlayCircle className="w-7 h-7 transition-transform group-hover:scale-110" />
+                  Watch Video
                 </Button>
               </Link>
-              <Link href={`/practice/${currentLesson}`} className={!isHeroUnlocked ? "pointer-events-none" : ""}>
+              <Link href={`/solve/${currentLessonId}`} className={!isHeroUnlocked ? "pointer-events-none" : ""}>
                 <Button 
-                  className={`${!isHeroUnlocked ? "bg-white/10 text-white/40 cursor-not-allowed" : "bg-primary hover:bg-primary/90 text-white shadow-[0_0_30px_rgba(var(--primary),0.3)] hover:scale-105"} h-14 px-8 rounded-2xl flex items-center gap-2 transition-all`}
+                  variant="outline"
+                  className={`h-20 px-10 rounded-[28px] border-white/10 bg-white/5 hover:bg-white/10 text-white text-lg font-bold flex items-center gap-4 transition-all hover:scale-105 active:scale-95 group`}
                   disabled={!isHeroUnlocked}
                 >
-                  {!isHeroUnlocked ? <Lock className="w-5 h-5" /> : <Target className="w-5 h-5" />}
-                  {!isHeroUnlocked ? "Locked" : "Start Practice"}
+                  <Target className="w-7 h-7 text-primary group-hover:rotate-12 transition-transform" />
+                  Solve Assessment
                 </Button>
               </Link>
-              <Link href={`/homework/${currentLesson}`} className={!isHeroUnlocked ? "pointer-events-none opacity-50" : ""}>
-                <Button variant="outline" className="border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 h-14 px-6 rounded-2xl flex items-center gap-2 group" disabled={!isHeroUnlocked}>
-                  <ClipboardList className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
-                  Homework
-                </Button>
-              </Link>
+            </div>
+
+            <div className="flex items-center gap-8 pt-8 border-t border-white/5 opacity-60">
+               <Link href="/materials" className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest hover:text-primary transition-colors">
+                 <BookOpen className="w-4 h-4" /> Resources
+               </Link>
+               <Link href={`/homework/${currentLessonId}`} className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest hover:text-emerald-400 transition-colors">
+                 <ClipboardList className="w-4 h-4" /> Homework
+               </Link>
             </div>
           </div>
         </div>

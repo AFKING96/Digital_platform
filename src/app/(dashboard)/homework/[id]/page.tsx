@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { collection, query, where, getDocs, doc, setDoc, serverTimestamp, orderBy, getDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, setDoc, serverTimestamp, orderBy, getDoc, updateDoc, arrayUnion, arrayRemove, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/providers/auth-provider";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,9 +22,12 @@ import {
   Info,
   Lock
 } from "lucide-react";
+import { QuestionRenderer } from "@/components/questions/QuestionRenderer";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useLessonMap } from "@/hooks/use-lesson-map";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Homework {
   id: string;
@@ -41,7 +44,8 @@ interface Homework {
 export default function HomeworkSolverPage() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, userData, isAdmin } = useAuth();
+  const { isLessonUnlocked } = useLessonMap();
   const [questions, setQuestions] = useState<Homework[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -52,50 +56,26 @@ export default function HomeworkSolverPage() {
   const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
+    if (params.id && user) {
+      setIsLocked(!isLessonUnlocked(
+        Number(params.id), 
+        userData?.unlockedLessons,
+        userData?.enrolledSubjects,
+        isAdmin
+      ));
+    }
+  }, [params.id, user, userData, isAdmin, isLessonUnlocked]);
+
+  useEffect(() => {
     async function fetchData() {
       if (!params.id) return;
       
-      // Check if lesson is unlocked and subject is enrolled
-      const lessonDoc = await getDoc(doc(db, "lessons", params.id as string));
-      if (lessonDoc.exists()) {
-        const lessonData = lessonDoc.data();
-        
-        let isUnlocked = false;
-        
-        if (user) {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          const userData = userDoc.data();
-          
-          if (userData?.unlockedLessons) {
-             isUnlocked = userData.unlockedLessons.includes(lessonData.id);
-          }
-          
-          if (!isUnlocked) {
-            setIsLocked(true);
-            setLoading(false);
-            return;
-          }
-          
-          const enrolled = userData?.enrolledSubjects || [];
-          if (lessonData.subjectId && !enrolled.includes(lessonData.subjectId)) {
-            setIsLocked(true);
-            setLoading(false);
-            return;
-          }
-        } else if (!isUnlocked) {
-          setIsLocked(true);
-          setLoading(false);
-          return;
-        }
-      }
-
       // Fetch Homework Questions
       const hSnap = await getDocs(query(
         collection(db, "homework_questions"), 
         where("lessonId", "==", Number(params.id))
       ));
       const hData = hSnap.docs.map(d => ({ id: d.id, ...d.data() } as Homework));
-      // Client-side sort to avoid index requirements
       hData.sort((a, b) => ((a as any).order || 0) - ((b as any).order || 0));
       setQuestions(hData);
 
@@ -106,7 +86,7 @@ export default function HomeworkSolverPage() {
           setSavedIds(userDoc.data().savedQuestions || []);
         }
 
-        // Fetch existing submissions to see what's already done
+        // Fetch existing submissions
         const subSnap = await getDocs(query(
           collection(db, "submissions"),
           where("userId", "==", user.uid),
@@ -141,7 +121,7 @@ export default function HomeworkSolverPage() {
     setSubmitted({ ...submitted, [q.id]: true });
 
     if (user) {
-      const isCorrect = answers[q.id] === q.answer;
+      const isCorrect = q.type === "Essay" ? true : (answers[q.id] === q.answer);
       await setDoc(doc(db, "submissions", `${user.uid}_${q.id}`), {
         userId: user.uid,
         userName: user.displayName || "Student",
@@ -149,6 +129,7 @@ export default function HomeworkSolverPage() {
         lessonId: Number(params.id),
         answer: answers[q.id] || "",
         isCorrect,
+        status: q.type === "Essay" ? "pending" : "reviewed",
         type: "homework",
         isLate,
         timestamp: serverTimestamp()
@@ -245,86 +226,32 @@ export default function HomeworkSolverPage() {
                </Button>
             </div>
 
-            <div className="space-y-8">
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 px-3 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20">
-                    {currentQuestion.type}
-                  </span>
-                  {deadline && (
-                    <span className={cn(
-                      "text-[10px] font-bold px-3 py-1 rounded-full border flex items-center gap-1.5",
-                      isOverdue ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-white/5 border-white/10 text-muted-foreground"
-                    )}>
-                      <Clock className="w-3 h-3" /> Due {new Date(deadline).toLocaleString()}
-                    </span>
-                  )}
-                </div>
-                <h2 className="text-2xl md:text-3xl font-bold leading-tight">{currentQuestion.content}</h2>
-                {currentQuestion.imageUrl && (
-                  <img src={currentQuestion.imageUrl} alt="Context" className="rounded-2xl border border-white/10 max-h-64 object-contain bg-black/20" />
-                )}
-              </div>
-
-              <div className="grid gap-3">
-                {currentQuestion.type === "MCQ" && currentQuestion.options?.map((opt, i) => {
-                  const isSelected = currentAnswer === opt;
-                  const isCorrectOpt = opt === currentQuestion.answer;
-                  
-                  return (
-                    <button
-                      key={i}
-                      disabled={isSubmitted}
-                      onClick={() => handleSelectOption(opt)}
-                      className={cn(
-                        "p-5 rounded-2xl border transition-all text-left flex items-center gap-4 group",
-                        isSelected && !isSubmitted && "bg-emerald-500/10 border-emerald-500 text-white",
-                        isSubmitted && isCorrectOpt && "bg-emerald-500/20 border-emerald-500 text-white",
-                        isSubmitted && isSelected && !isCorrectOpt && "bg-red-500/20 border-red-500 text-white",
-                        !isSelected && !isSubmitted && "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:border-white/20"
-                      )}
-                    >
-                      <div className={cn(
-                        "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm transition-all",
-                        isSelected && !isSubmitted && "bg-emerald-500 text-white",
-                        isSubmitted && isCorrectOpt && "bg-emerald-500 text-white",
-                        isSubmitted && isSelected && !isCorrectOpt && "bg-red-500 text-white",
-                        !isSelected && !isSubmitted && "bg-white/10 group-hover:bg-white/20"
-                      )}>
-                        {String.fromCharCode(65 + i)}
-                      </div>
-                      <span className="font-medium">{opt}</span>
-                    </button>
-                  );
-                })}
-
-                {currentQuestion.type === "TF" && ["True", "False"].map(opt => (
-                  <button
-                    key={opt}
-                    disabled={isSubmitted}
-                    onClick={() => handleSelectOption(opt)}
-                    className={cn(
-                      "p-5 rounded-2xl border transition-all flex items-center justify-center font-bold gap-3",
-                      currentAnswer === opt && !isSubmitted && "bg-emerald-500/10 border-emerald-500 text-white",
-                      isSubmitted && opt === currentQuestion.answer && "bg-emerald-500/20 border-emerald-500 text-white",
-                      isSubmitted && currentAnswer === opt && opt !== currentQuestion.answer && "bg-red-500/20 border-red-500 text-white",
-                      currentAnswer !== opt && !isSubmitted && "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10"
-                    )}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
+            <QuestionRenderer 
+              question={currentQuestion}
+              value={currentAnswer || ""}
+              onChange={handleSelectOption}
+              disabled={isSubmitted}
+              isSubmitted={isSubmitted}
+              showExplanation={true}
+            />
 
               <AnimatePresence>
                 {isSubmitted && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="pt-6 border-t border-white/5 space-y-4">
-                    <div className={cn("p-4 rounded-xl border flex items-start gap-3", isCorrect ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400")}>
-                      {isCorrect ? <CheckCircle2 className="w-5 h-5 mt-0.5" /> : <XCircle className="w-5 h-5 mt-0.5" />}
+                    <div className={cn("p-4 rounded-xl border flex items-start gap-3", 
+                      currentQuestion.type === "Essay" ? "bg-blue-500/10 border-blue-500/20 text-blue-400" :
+                      isCorrect ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400"
+                    )}>
+                      {currentQuestion.type === "Essay" ? <ClipboardList className="w-5 h-5 mt-0.5" /> :
+                       isCorrect ? <CheckCircle2 className="w-5 h-5 mt-0.5" /> : <XCircle className="w-5 h-5 mt-0.5" />}
                       <div>
-                        <p className="font-bold text-sm">{isCorrect ? "Response Received" : "Incorrect Answer"}</p>
+                        <p className="font-bold text-sm">
+                          {currentQuestion.type === "Essay" ? "Submitted for Review" :
+                           isCorrect ? "Response Received" : "Incorrect Answer"}
+                        </p>
                         <p className="text-xs opacity-80 mt-1">
-                          {isCorrect ? "Great job! Your assignment has been recorded." : `The correct answer was ${currentQuestion.answer}.`}
+                          {currentQuestion.type === "Essay" ? "Your answer has been sent to your instructor for grading." :
+                           isCorrect ? "Great job! Your assignment has been recorded." : `The correct answer was ${currentQuestion.answer}.`}
                         </p>
                       </div>
                     </div>
@@ -333,13 +260,12 @@ export default function HomeworkSolverPage() {
                         <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
                           <Info className="w-3 h-3 text-emerald-500" /> Instructor Hint
                         </div>
-                        <p className="text-sm text-muted-foreground leading-relaxed italic">{currentQuestion.explanation}</p>
+                        <p className="text-sm text-muted-foreground leading-relaxed italic whitespace-pre-wrap">{currentQuestion.explanation}</p>
                       </div>
                     )}
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
           </Card>
         </motion.div>
       </AnimatePresence>
@@ -380,7 +306,7 @@ export default function HomeworkSolverPage() {
             </div>
             <div className="space-y-2">
               <h2 className="text-2xl font-bold">Homework Submitted!</h2>
-              <p className="text-muted-foreground">You've successfully completed the assignments for Lesson {params.id}.</p>
+              <p className="text-muted-foreground">You've successfully completed the assignments for this lesson.</p>
             </div>
             <Button onClick={() => router.push("/homework")} className="w-full bg-emerald-500 h-12 rounded-2xl">
               Back to Assignments <ArrowRight className="w-4 h-4 ml-2" />

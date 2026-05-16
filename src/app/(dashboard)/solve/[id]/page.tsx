@@ -2,18 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { doc, getDoc, addDoc, collection, updateDoc, serverTimestamp, getDocs, orderBy, query, where, onSnapshot } from "firebase/firestore";
-import { db, auth } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/components/providers/auth-provider";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { QuestionRenderer } from "@/components/questions/QuestionRenderer";
 import { ArrowLeft, ArrowRight, Check, ExternalLink, Lock } from "lucide-react";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useLessonMap } from "@/hooks/use-lesson-map";
 
 interface Question {
+  id: string | number;
   question: string;
   type: "mcq" | "true_false" | "essay";
   options?: string[];
@@ -41,8 +42,10 @@ export default function SolvePage() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [displayNumber, setDisplayNumber] = useState<number | null>(null);
   const [isLocked, setIsLocked] = useState(false);
+
+  const { user } = useAuth();
+  const { getLessonOrder, getLessonTitle } = useLessonMap();
 
   useEffect(() => {
     if (!params.id) return;
@@ -61,40 +64,40 @@ export default function SolvePage() {
       setLoading(false);
     });
 
-    // 2. Fetch lesson order and check lock status
-    const fetchLesson = async () => {
-      const q = query(collection(db, "lessons"), where("id", "==", Number(params.id)));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        const lData = snap.docs[0].data() as any;
-        setDisplayNumber(lData.order);
-        
-        let isUnlocked = false;
-        if (auth.currentUser) {
-          const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-          const userData = userDoc.data();
-          
-          if (userData?.unlockedLessons) {
-             isUnlocked = userData.unlockedLessons.includes(lData.id);
-          }
-          
-          if (!isUnlocked) {
-            setIsLocked(true);
-          } else {
-            const enrolled = userData?.enrolledSubjects || [];
-            if (lData.subjectId && !enrolled.includes(lData.subjectId)) {
-              setIsLocked(true);
-            }
-          }
-        } else if (!isUnlocked) {
-          setIsLocked(true);
-        }
-      }
-    };
-    fetchLesson();
-
     return () => unsubscribeQuiz();
   }, [params.id]);
+
+  useEffect(() => {
+    if (!params.id) return;
+    
+    let unsubUser = () => {};
+    if (user) {
+      unsubUser = onSnapshot(doc(db, "users", user.uid), async (userDoc) => {
+        const userData = userDoc.data();
+        let currentUnlocked = false;
+        
+        const q = query(collection(db, "lessons"), where("id", "==", Number(params.id)));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const lData = snap.docs[0].data() as any;
+          if (userData?.unlockedLessons) {
+             currentUnlocked = userData.unlockedLessons.includes(lData.id);
+          }
+          
+          const enrolled = userData?.enrolledSubjects || [];
+          if (lData.subjectId && !enrolled.includes(lData.subjectId)) {
+            currentUnlocked = false;
+          }
+        }
+        
+        setIsLocked(!currentUnlocked);
+      });
+    } else {
+      setIsLocked(true);
+    }
+    
+    return () => unsubUser();
+  }, [user, params.id]);
 
   const handleNext = () => {
     if (quiz && currentQuestionIndex < quiz.questions.length - 1) {
@@ -116,7 +119,7 @@ export default function SolvePage() {
   };
 
   const handleSubmit = async () => {
-    if (!auth.currentUser || !quiz) return;
+    if (!user || !quiz) return;
     
     setSubmitting(true);
     try {
@@ -141,7 +144,7 @@ export default function SolvePage() {
 
       // 1. Create submission document
       await addDoc(collection(db, "submissions"), {
-        userId: auth.currentUser.uid,
+        userId: user.uid,
         lessonId: quiz.lessonId,
         answers: answers,
         score: hasEssay ? null : accuracy,
@@ -154,7 +157,7 @@ export default function SolvePage() {
       });
 
       // 2. SMART TRACKING & GAMIFICATION
-      const userRef = doc(db, "users", auth.currentUser.uid);
+      const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
       
       if (userSnap.exists()) {
@@ -224,15 +227,14 @@ export default function SolvePage() {
           streak: currentStreak,
           lastActiveDate: serverTimestamp(),
           completedLessons: completedLessons,
-          performance: performance,
-          currentLesson: Math.max(ud.currentLesson || 1, quiz.lessonId + 1)
+          performance: performance
         });
 
         // 6. Notification: Result
         await addDoc(collection(db, "notifications"), {
-          userId: auth.currentUser.uid,
+          userId: user.uid,
           title: "Quiz Completed",
-          message: `You completed Module ${displayNumber || quiz.lessonId} with ${accuracy}% accuracy! +${gainedPoints} points earned.`,
+          message: `You completed Module ${getLessonOrder(quiz.lessonId, quiz.lessonId)} with ${accuracy}% accuracy! +${gainedPoints} points earned.`,
           type: "result",
           read: false,
           createdAt: serverTimestamp()
@@ -339,18 +341,23 @@ export default function SolvePage() {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Exit
         </Button>
-        <div className="text-sm font-medium text-muted-foreground">
-          Question {currentQuestionIndex + 1} of {quiz.questions.length}
+        <div className="text-right">
+          <div className="text-sm font-bold text-white uppercase tracking-wider">{getLessonTitle(quiz.lessonId, `Module ${params.id}`)}</div>
+          <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.2em]">
+            Question {currentQuestionIndex + 1} of {quiz.questions.length}
+          </div>
         </div>
       </div>
 
-      <div className="w-full bg-white/5 rounded-full h-1.5 mb-8 overflow-hidden">
+      <div className="w-full bg-white/5 rounded-full h-2.5 mb-10 overflow-hidden shadow-inner border border-white/5">
         <motion.div 
-          className="bg-primary h-1.5 rounded-full" 
+          className="bg-gradient-to-r from-primary to-blue-400 h-full rounded-full relative shadow-[0_0_15px_rgba(var(--primary),0.5)]" 
           initial={{ width: 0 }}
           animate={{ width: `${progress}%` }}
-          transition={{ duration: 0.3 }}
-        />
+          transition={{ duration: 0.5, ease: "easeInOut" }}
+        >
+          <div className="absolute top-0 right-0 bottom-0 w-10 bg-white/30 blur-[4px] transform translate-x-1/2" />
+        </motion.div>
       </div>
 
       {/* Question Card */}
@@ -362,66 +369,14 @@ export default function SolvePage() {
           exit={{ opacity: 0, x: -20 }}
           transition={{ duration: 0.3 }}
         >
-          <Card className="glass-card p-8 md:p-10 min-h-[400px] flex flex-col">
-            <div className="mb-4">
-              <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-3 py-1 rounded-full uppercase tracking-widest">
-                {currentQuestion.type === "mcq" ? "Multiple Choice" : currentQuestion.type === "true_false" ? "True or False" : "Essay"}
-              </span>
-            </div>
-            
-            <h2 className="text-2xl md:text-3xl font-bold text-white mb-8 leading-relaxed">
-              {currentQuestion.question}
-            </h2>
-
-            <div className="flex-1 mt-4">
-              {(currentQuestion.type === "mcq" || currentQuestion.type === "true_false") && currentQuestion.options && (
-                <div className="grid gap-3">
-                  {currentQuestion.options.map((option, idx) => {
-                    const isSelected = answers[currentQuestionIndex] === option;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => handleAnswerSelect(option)}
-                        className={`w-full text-left p-5 rounded-2xl border transition-all duration-200 flex items-center gap-4 group ${
-                          isSelected 
-                            ? "bg-primary/10 border-primary text-white shadow-[0_0_20px_rgba(var(--primary),0.1)]" 
-                            : "bg-black/20 border-white/10 text-white/80 hover:bg-black/40 hover:border-white/20"
-                        }`}
-                      >
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 transition-colors ${
-                          isSelected ? "bg-primary text-primary-foreground" : "bg-white/5 text-muted-foreground group-hover:bg-white/10 group-hover:text-white"
-                        }`}>
-                          {String.fromCharCode(65 + idx)}
-                        </div>
-                        <span className="text-lg flex-1">{option}</span>
-                        {isSelected && (
-                          <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0"
-                          >
-                            <Check className="w-4 h-4 text-primary" />
-                          </motion.div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {currentQuestion.type === "essay" && (
-                <div className="space-y-4">
-                  <Label className="text-muted-foreground ml-1">Your Detailed Answer</Label>
-                  <Textarea
-                    autoFocus
-                    value={answers[currentQuestionIndex] || ""}
-                    onChange={(e) => handleAnswerSelect(e.target.value)}
-                    placeholder="Type your essay answer here... Include as much detail as possible."
-                    className="min-h-[150px] text-lg p-4 bg-black/30 border-white/10 focus:border-primary/50 resize-y"
-                  />
-                </div>
-              )}
-            </div>
+          <Card className="glass-card p-8 md:p-10 min-h-[500px] flex flex-col">
+            <QuestionRenderer 
+              question={{ ...currentQuestion, id: currentQuestion.id || currentQuestionIndex }}
+              value={answers[currentQuestionIndex] || ""}
+              onChange={handleAnswerSelect}
+              isSubmitted={false}
+            />
+          </Card>
 
             {/* Navigation Buttons */}
             <div className="flex justify-between items-center mt-12 pt-6 border-t border-white/5">
@@ -454,7 +409,6 @@ export default function SolvePage() {
                 </Button>
               )}
             </div>
-          </Card>
         </motion.div>
       </AnimatePresence>
     </div>

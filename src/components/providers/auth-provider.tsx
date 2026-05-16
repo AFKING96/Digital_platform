@@ -16,13 +16,18 @@ interface UserData {
   name: string;
   email: string;
   role: string;
+  universityId?: string;
   currentLesson: number;
   solvedQuestions: number;
   accuracy: number;
   performance?: PerformanceEntry[];
   points?: number;
   streak?: number;
-  lastActiveDate?: import("firebase/firestore").Timestamp;
+  lastActiveDate?: any;
+  unlockedLessons?: number[];
+  enrolledSubjects?: string[];
+  savedQuestions?: string[];
+  completedLessons?: number[];
 }
 
 interface AuthContextType {

@@ -6,7 +6,7 @@ import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { DashboardOverview } from "@/components/ui/dashboard-overview";
-import { TrendingDown, Users, BarChart as BarChartIcon, Target } from "lucide-react";
+import { TrendingDown, Users, BarChart as BarChartIcon, Target, CheckCircle2 } from "lucide-react";
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area } from "recharts";
 
@@ -20,8 +20,10 @@ export default function AdminDashboard() {
 
   const [insights, setInsights] = useState({
     avgAccuracy: 0,
+    completionRate: 0,
     lowestLesson: { id: 0, accuracy: 100 },
-    mostSubmissionsLesson: { id: 0, count: 0 }
+    mostSubmissionsLesson: { id: 0, count: 0 },
+    topLesson: { id: 0, accuracy: 0 }
   });
 
   const [chartData, setChartData] = useState<any[]>([]);
@@ -38,26 +40,30 @@ export default function AdminDashboard() {
 
       snapshot.docs.forEach(doc => {
         const data = doc.data();
-        if (data.currentLesson > 1 || data.solvedQuestions > 0) active++;
-        if (data.accuracy) {
-          totalAcc += data.accuracy;
+        if ((data.unlockedLessons?.length || 0) > 0 || data.solvedQuestions > 0) active++;
+        
+        const accuracy = Number(data.accuracy);
+        if (Number.isFinite(accuracy)) {
+          totalAcc += accuracy;
           accCount++;
         }
       });
       
       setStats(prev => ({
         ...prev,
-        totalStudents: snapshot.size,
-        activeStudents: active
+        totalStudents: Number.isFinite(snapshot.size) ? snapshot.size : 0,
+        activeStudents: Number.isFinite(active) ? active : 0
       }));
 
       setInsights(prev => ({
         ...prev,
-        avgAccuracy: accCount > 0 ? Math.round(totalAcc / accCount) : 0
+        avgAccuracy: accCount > 0 ? Math.round(totalAcc / accCount) : 0,
+        completionRate: snapshot.size > 0 ? Math.round((active / snapshot.size) * 100) : 0
       }));
+
+
     });
 
-    // Realtime listeners for Submissions
     const submissionsQuery = collection(db, "submissions");
     const unsubscribeSubmissions = onSnapshot(submissionsQuery, (snapshot) => {
       let pending = 0;
@@ -67,26 +73,38 @@ export default function AdminDashboard() {
          const data = doc.data();
          if (data.status === "pending") pending++;
          
-         if (data.score !== null) {
-            if (!lessonStats[data.lessonId]) lessonStats[data.lessonId] = { totalScore: 0, count: 0 };
-            lessonStats[data.lessonId].totalScore += data.score;
-            lessonStats[data.lessonId].count++;
+         const lessonId = Number(data.lessonId);
+         const score = Number(data.score);
+
+         if (!isNaN(lessonId) && !isNaN(score) && data.score !== null) {
+            if (!lessonStats[lessonId]) lessonStats[lessonId] = { totalScore: 0, count: 0 };
+            lessonStats[lessonId].totalScore += score;
+            lessonStats[lessonId].count++;
          }
       });
 
-      // Calculate lowest accuracy lesson
+      // Calculate stats with safety checks
       let lowest = { id: 0, accuracy: 100 };
       let mostSub = { id: 0, count: 0 };
+      let top = { id: 0, accuracy: 0 };
       const cData: any[] = [];
 
-      Object.entries(lessonStats).forEach(([id, stat]) => {
-        const avg = Math.round(stat.totalScore / stat.count);
+      Object.entries(lessonStats).forEach(([idStr, stat]) => {
+        const id = Number(idStr);
+        if (isNaN(id)) return;
+
+        const avg = stat.count > 0 ? Math.round(stat.totalScore / stat.count) : 0;
+        
         if (avg < lowest.accuracy) {
-          lowest = { id: Number(id), accuracy: avg };
+          lowest = { id, accuracy: avg };
+        }
+        if (avg > top.accuracy) {
+          top = { id, accuracy: avg };
         }
         if (stat.count > mostSub.count) {
-          mostSub = { id: Number(id), count: stat.count };
+          mostSub = { id, count: stat.count };
         }
+        
         cData.push({
           name: `Mod ${id}`,
           accuracy: avg,
@@ -98,16 +116,29 @@ export default function AdminDashboard() {
 
       setStats(prev => ({
         ...prev,
-        totalSubmissions: snapshot.size,
-        pendingReviews: pending
+        totalSubmissions: Number.isFinite(snapshot.size) ? snapshot.size : 0,
+        pendingReviews: Number.isFinite(pending) ? pending : 0
       }));
+
 
       setInsights(prev => ({
         ...prev,
-        lowestLesson: lowest,
-        mostSubmissionsLesson: mostSub
+        lowestLesson: { 
+          id: Number.isFinite(lowest.id) ? lowest.id : 0, 
+          accuracy: Number.isFinite(lowest.accuracy) ? lowest.accuracy : 0 
+        },
+        mostSubmissionsLesson: { 
+          id: Number.isFinite(mostSub.id) ? mostSub.id : 0, 
+          count: Number.isFinite(mostSub.count) ? mostSub.count : 0 
+        },
+        topLesson: { 
+          id: Number.isFinite(top.id) ? top.id : 0, 
+          accuracy: Number.isFinite(top.accuracy) ? top.accuracy : 0 
+        }
       }));
     });
+
+
 
     return () => {
       unsubscribeStudents();
@@ -190,23 +221,61 @@ export default function AdminDashboard() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.3 }}
         >
-          <Card className="glass-card p-6 border-emerald-500/20 bg-emerald-500/5">
+          <Card className="glass-card p-6 border-primary/20 bg-primary/5">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                <BarChartIcon className="w-6 h-6" />
+              <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center text-primary">
+                <CheckCircle2 className="w-6 h-6" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground font-medium uppercase tracking-wider">Most Active</p>
-                <h3 className="text-2xl font-bold text-white">
-                  {insights.mostSubmissionsLesson.id > 0 ? `Module ${insights.mostSubmissionsLesson.id}` : "N/A"}
-                </h3>
+                <p className="text-sm text-muted-foreground font-medium uppercase tracking-wider">Completion Rate</p>
+                <h3 className="text-2xl font-bold text-white">{insights.completionRate}%</h3>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-4">
-              {insights.mostSubmissionsLesson.id > 0 
-                ? `${insights.mostSubmissionsLesson.count} submissions received.` 
-                : "No activity tracked yet."}
-            </p>
+            <p className="text-xs text-muted-foreground mt-4">Active vs Total students ratio.</p>
+          </Card>
+        </motion.div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          <Card className="glass-card p-6 border-emerald-500/20 bg-emerald-500/5">
+             <div className="flex items-center justify-between mb-4">
+               <div className="flex items-center gap-2 text-emerald-400">
+                 <Target className="w-5 h-5" />
+                 <h3 className="font-bold uppercase tracking-widest text-xs">Top Performing Module</h3>
+               </div>
+               <span className="text-2xl font-black text-white">{insights.topLesson.accuracy}%</span>
+             </div>
+             <div className="p-4 bg-black/40 rounded-xl border border-white/5">
+               <p className="text-sm text-white/80 font-medium">
+                 {insights.topLesson.id > 0 ? `Module ${insights.topLesson.id} has the highest student accuracy.` : "No data available."}
+               </p>
+             </div>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.5 }}
+        >
+          <Card className="glass-card p-6 border-red-500/20 bg-red-500/5">
+             <div className="flex items-center justify-between mb-4">
+               <div className="flex items-center gap-2 text-red-400">
+                 <TrendingDown className="w-5 h-5" />
+                 <h3 className="font-bold uppercase tracking-widest text-xs">Priority Module</h3>
+               </div>
+               <span className="text-2xl font-black text-white">{insights.lowestLesson.accuracy}%</span>
+             </div>
+             <div className="p-4 bg-black/40 rounded-xl border border-white/5">
+               <p className="text-sm text-white/80 font-medium">
+                 {insights.lowestLesson.id > 0 ? `Module ${insights.lowestLesson.id} needs instructor review.` : "No data available."}
+               </p>
+             </div>
           </Card>
         </motion.div>
       </div>
